@@ -188,9 +188,9 @@ void main() {
     if (uPeel > 0.001) {
       // shadow the flap casts onto the front, just past its lip
       float lipT = t0 + curlW;
-      float sh = (1.0 - smoothstep(0.0, 0.14, t - lipT)) *
-                 smoothstep(-0.01, 0.01, t - lipT);
-      col.rgb *= 1.0 - sh * uShadow * 0.5;
+      float sh = (1.0 - smoothstep(0.0, 0.05, t - lipT)) *
+                 smoothstep(-0.008, 0.008, t - lipT);
+      col.rgb *= 1.0 - sh * uShadow * 0.28;
 
       // the curled flap folds BACK OVER the front: screen points just past
       // the fold show the foil backside of the peeled-away region
@@ -199,17 +199,17 @@ void main() {
         float shape = shapeMask(uvBack);
         if (shape > 0.004) {
           float s = (t - t0) / curlW;          // 0 at fold .. 1 at lip
-          // cylinder shading: bright crest, darker at fold and lip
-          float shade = 0.5 + 0.55 * sin(s * 3.14159);
-          vec3 silver = vec3(0.95, 0.96, 0.97) * shade;
+          // cylinder shading: bright crest, gently darker at fold and lip
+          float shade = 0.8 + 0.25 * sin(s * 3.14159);
+          vec3 silver = vec3(0.95, 0.96, 0.97);
           vec3 rb = rainbow(uvBack * 0.8 + vec2(s * 0.5), 0.2);
-          vec3 backCol = mix(silver, rb * shade, uHolo * 0.45);
+          vec3 backCol = mix(silver, rb, uHolo * 0.3) * shade;
           // fine streaks running along the curl axis
           float streak = 0.5 + 0.5 * sin(dot(uvBack, vec2(-d.y, d.x)) * 60.0);
           backCol *= 0.92 + streak * 0.08;
           // contact shadow under the flap right at the fold
-          float under = 1.0 - smoothstep(0.0, 0.35, s);
-          vec3 frontShadowed = col.rgb * (1.0 - under * uShadow * 0.35);
+          float under = 1.0 - smoothstep(0.0, 0.2, s);
+          vec3 frontShadowed = col.rgb * (1.0 - under * uShadow * 0.22);
           // crisp lip edge
           float lip = smoothstep(1.0, 0.965, s);
           float flapA = shape * lip;
