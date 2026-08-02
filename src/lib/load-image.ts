@@ -33,7 +33,20 @@ export async function loadImageFile(file: File): Promise<LoadedImage> {
     }
   }
 
-  const bitmap = await createImageBitmap(file)
+  let bitmap = await createImageBitmap(file)
+  // Nearest-upscale small (pixel-art) sources so bilinear sampling in the
+  // shader doesn't smear their edges into blurry staircases.
+  const maxDim = Math.max(bitmap.width, bitmap.height)
+  if (maxDim < 512) {
+    const factor = Math.ceil(1024 / maxDim)
+    const canvas = document.createElement("canvas")
+    canvas.width = bitmap.width * factor
+    canvas.height = bitmap.height * factor
+    const ctx = canvas.getContext("2d")!
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    bitmap = await createImageBitmap(canvas)
+  }
   return { bitmap, aspect: bitmap.width / bitmap.height, name: file.name }
 }
 

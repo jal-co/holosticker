@@ -92,16 +92,18 @@ float artAlpha(vec2 uv) {
 
 // dilated alpha = die-cut sticker shape (art + border)
 float shapeMask(vec2 uv) {
-  if (uBorder < 0.0005) return artAlpha(uv);
   float m = artAlpha(uv);
-  const int DIRS = 16;
-  for (int i = 0; i < DIRS; i++) {
-    float a = 6.2831853 * float(i) / float(DIRS);
-    vec2 d = vec2(cos(a), sin(a));
-    m = max(m, artAlpha(uv + d * uBorder));
-    m = max(m, artAlpha(uv + d * uBorder * 0.55));
+  if (uBorder >= 0.0005) {
+    const int DIRS = 16;
+    for (int i = 0; i < DIRS; i++) {
+      float a = 6.2831853 * float(i) / float(DIRS);
+      vec2 d = vec2(cos(a), sin(a));
+      m = max(m, artAlpha(uv + d * uBorder));
+      m = max(m, artAlpha(uv + d * uBorder * 0.55));
+    }
   }
-  return m;
+  // sharpen the soft bilinear alpha ramp into a crisp antialiased edge
+  return smoothstep(0.35, 0.65, m);
 }
 
 // ---------- holographic foil ----------
@@ -190,7 +192,9 @@ void main() {
       float lipT = t0 + curlW;
       float sh = (1.0 - smoothstep(0.0, 0.05, t - lipT)) *
                  smoothstep(-0.008, 0.008, t - lipT);
-      col.rgb *= 1.0 - sh * uShadow * 0.28;
+      // only shade where the flap lip actually hangs above this column
+      float caster = shapeMask(uv - (t - t0 + curlW) * d);
+      col.rgb *= 1.0 - sh * caster * uShadow * 0.28;
 
       // the curled flap folds BACK OVER the front: screen points just past
       // the fold show the foil backside of the peeled-away region
