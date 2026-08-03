@@ -905,7 +905,8 @@ export class HoloRenderer {
           : s.overlay === "squares"
             ? 2
             : 3
-    u.uPeelOn.value = s.peelAmount > 0.001 ? 1 : 0
+    // smooth ramp so shading terms fade in with the peel instead of popping
+    u.uPeelOn.value = Math.min(1, s.peelAmount / 0.05)
     u.uInk.value = s.ink
     u.uRelief.value = s.relief
     const fin = FINISH_PARAMS[s.finish] ?? FINISH_PARAMS.holo
@@ -939,10 +940,19 @@ export class HoloRenderer {
   async exportPNG(input: {
     settings: StickerSettings
     imgAspect: number
+    /** Keep the canvas tilt (used when rotation is locked). */
+    keepTilt?: boolean
   }): Promise<Blob> {
     const prevW = this.canvas.width
     const prevH = this.canvas.height
     this.busy = true
+    // exports face straight on; lock the canvas ("L") to bake a tilt
+    const prevTilt = this.tilt.clone()
+    const prevTarget = this.tiltTarget.clone()
+    if (!input.keepTilt) {
+      this.tilt.set(0, 0)
+      this.tiltTarget.set(0, 0)
+    }
     const size = input.settings.exportSize
     this.canvas.width = size
     this.canvas.height = size
@@ -955,6 +965,8 @@ export class HoloRenderer {
     })
     this.canvas.width = prevW
     this.canvas.height = prevH
+    this.tilt.copy(prevTilt)
+    this.tiltTarget.copy(prevTarget)
     this.busy = false
     this.render(input)
     return blob

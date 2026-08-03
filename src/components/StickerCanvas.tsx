@@ -7,6 +7,8 @@ interface Props {
   image: ImageBitmap | null
   imgAspect: number
   settings: StickerSettings
+  /** When true, pointer movement no longer tilts the sticker. */
+  tiltLocked?: boolean
   onRendererReady: (r: HoloRenderer) => void
 }
 
@@ -21,6 +23,7 @@ export function StickerCanvas({
   image,
   imgAspect,
   settings,
+  tiltLocked = false,
   onRendererReady,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -77,13 +80,13 @@ export function StickerCanvas({
         ref={canvasRef}
         className="size-full touch-none"
         onPointerMove={(e) => {
+          if (tiltLocked) return
           const rect = e.currentTarget.getBoundingClientRect()
           rendererRef.current?.setTilt(
             ((e.clientX - rect.left) / rect.width) * 2 - 1,
             1 - ((e.clientY - rect.top) / rect.height) * 2,
           )
         }}
-        onPointerLeave={() => rendererRef.current?.setTilt(0, 0)}
       />
       {!image && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">

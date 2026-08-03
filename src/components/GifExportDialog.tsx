@@ -31,7 +31,15 @@ interface Props {
   imgAspect: number
   settings: StickerSettings
   progress: number | null
+  /** Object URL of the finished GIF, shown for a gesture-driven save. */
+  result: string | null
+  onClearResult: () => void
   onExport: (opts: {
+    anim: GifAnim
+    background: GifBackground
+    speed: number
+  }) => void
+  onShare: (opts: {
     anim: GifAnim
     background: GifBackground
     speed: number
@@ -45,7 +53,10 @@ export function GifExportDialog({
   imgAspect,
   settings,
   progress,
+  result,
+  onClearResult,
   onExport,
+  onShare,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const rendererRef = useRef<HoloRenderer | null>(null)
@@ -56,7 +67,7 @@ export function GifExportDialog({
 
   // live looping preview of the chosen animation
   useEffect(() => {
-    if (!open) return
+    if (!open || result) return
     let raf = 0
     const loopMs = (anim === "peel" ? 2880 : 2400) / speed
     const draw = () => {
@@ -94,7 +105,7 @@ export function GifExportDialog({
     }
     draw()
     return () => cancelAnimationFrame(raf)
-  }, [open, anim, speed, image, imgAspect, settings])
+  }, [open, result, anim, speed, image, imgAspect, settings])
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -123,13 +134,27 @@ export function GifExportDialog({
               bgClass[background],
             )}
           >
-            <canvas ref={canvasRef} className="size-full" />
+            {result ? (
+              <img
+                src={result}
+                alt="Finished GIF preview"
+                className="size-full object-contain"
+              />
+            ) : (
+              <canvas ref={canvasRef} className="size-full" />
+            )}
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
             <div className="space-y-1.5">
               <Label className="text-xs">Animation</Label>
-              <Select value={anim} onValueChange={(v) => setAnim(v as GifAnim)}>
+              <Select
+                value={anim}
+                onValueChange={(v) => {
+                  onClearResult()
+                  setAnim(v as GifAnim)
+                }}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -143,7 +168,10 @@ export function GifExportDialog({
               <Label className="text-xs">Background</Label>
               <Select
                 value={background}
-                onValueChange={(v) => setBackground(v as GifBackground)}
+                onValueChange={(v) => {
+                  onClearResult()
+                  setBackground(v as GifBackground)
+                }}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -169,17 +197,51 @@ export function GifExportDialog({
               min={0.5}
               max={2}
               step={0.05}
-              onValueChange={([v]) => setSpeed(v)}
+              onValueChange={([v]) => {
+                onClearResult()
+                setSpeed(v)
+              }}
             />
           </div>
 
+          {result ? (
+            <div className="mt-3 flex gap-2">
+              <Button className="flex-1" asChild>
+                <a href={result} download="holo-sticker.gif">
+                  <Clapperboard aria-hidden />
+                  Save GIF
+                </a>
+              </Button>
+              <Button variant="outline" onClick={onClearResult}>
+                Re-edit
+              </Button>
+            </div>
+          ) : (
+            <Button
+              className="mt-3 w-full"
+              disabled={progress !== null}
+              onClick={() => onExport({ anim, background, speed })}
+            >
+              <Clapperboard aria-hidden />
+              {progress !== null ? `Encoding… ${progress}%` : "Export GIF"}
+            </Button>
+          )}
           <Button
-            className="mt-3 w-full"
+            variant="outline"
+            className="mt-2 w-full"
             disabled={progress !== null}
-            onClick={() => onExport({ anim, background, speed })}
+            onClick={() => onShare({ anim, background, speed })}
           >
-            <Clapperboard aria-hidden />
-            {progress !== null ? `Encoding… ${progress}%` : "Export GIF"}
+            <svg
+              viewBox="0 0 24 24"
+              width="14"
+              height="14"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117l11.966 15.644Z" />
+            </svg>
+            Share on X
           </Button>
         </Dialog.Content>
       </Dialog.Portal>

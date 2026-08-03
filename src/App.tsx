@@ -3,6 +3,7 @@ import { ChevronDown, History, Moon, Sun } from "lucide-react"
 import { DropdownMenu } from "radix-ui"
 import { Analytics } from "@vercel/analytics/react"
 import { Button } from "@/components/ui/button"
+import { Kbd } from "@/components/ui/kbd"
 import {
   Select,
   SelectContent,
@@ -29,8 +30,10 @@ export default function App() {
   const [exporting, setExporting] = useState(false)
   const [gifProgress, setGifProgress] = useState<number | null>(null)
   const [gifDialogOpen, setGifDialogOpen] = useState(false)
+  const [gifResult, setGifResult] = useState<string | null>(null)
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [componentDialogOpen, setComponentDialogOpen] = useState(false)
+  const [tiltLocked, setTiltLocked] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [dark, setDark] = useState(
     () =>
@@ -45,14 +48,28 @@ export default function App() {
     localStorage.setItem("holosticker-theme", dark ? "dark" : "light")
   }, [dark])
 
-  // "D" toggles dark mode
+  // "D" toggles dark mode, "L" locks canvas rotation
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== "d" || e.metaKey || e.ctrlKey || e.altKey)
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return
+      const t = e.target as HTMLElement | null
+      // only fire on the page background, never while a control has focus
+      if (
+        t &&
+        t.closest(
+          "input, textarea, select, button, [role=menu], [role=listbox], [contenteditable]",
+        )
+      )
         return
-      const t = e.target as HTMLElement
-      if (t.closest("input, textarea, select, [contenteditable]")) return
-      setDark((d) => !d)
+      const key = e.key.toLowerCase()
+      if (key === "d") {
+        e.preventDefault()
+        setDark((d) => !d)
+      }
+      if (key === "l") {
+        e.preventDefault()
+        setTiltLocked((l) => !l)
+      }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -80,7 +97,11 @@ export default function App() {
     if (!renderer) return
     setExporting(true)
     try {
-      const blob = await renderer.exportPNG({ settings, imgAspect })
+      const blob = await renderer.exportPNG({
+        settings,
+        imgAspect,
+        keepTilt: tiltLocked,
+      })
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
@@ -90,7 +111,7 @@ export default function App() {
     } finally {
       setExporting(false)
     }
-  }, [settings, imgAspect, imageName])
+  }, [settings, imgAspect, imageName, tiltLocked])
 
   const handleRemoveImage = useCallback(() => {
     setImage(null)
@@ -129,19 +150,19 @@ export default function App() {
           onProgress: (done, total) =>
             setGifProgress(Math.round((done / total) * 100)),
         })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `${(imageName ?? "sticker").replace(/\.[^.]+$/, "")}-holo.gif`
-      a.click()
-      URL.revokeObjectURL(url)
+        // encoding takes long enough that the click's user activation has
+        // expired, so auto-downloads get dropped sometimes; show the
+        // result and let a real click save it instead
+        setGifResult((prev) => {
+          if (prev) URL.revokeObjectURL(prev)
+          return URL.createObjectURL(blob)
+        })
       } finally {
         setExporting(false)
         setGifProgress(null)
-        setGifDialogOpen(false)
       }
     },
-    [settings, imgAspect, imageName],
+    [settings, imgAspect],
   )
 
   const handleExportComponent = useCallback(() => {
@@ -167,6 +188,59 @@ export default function App() {
     }, "image/png")
     setComponentDialogOpen(true)
   }, [image, settings, imageName])
+
+  const handleShareGIF = useCallback(
+    async (opts: {
+      anim: "sweep" | "peel"
+      background: "transparent" | "white" | "black"
+      speed: number
+    }) => {
+      const text =
+        "Just made a holographic sticker with Holosticker ✨ by @jalcowastaken"
+      const url = "https://holosticker.dev"
+      const renderer = rendererRef.current
+      if (renderer && image) {
+        setExporting(true)
+        try {
+          const blob = await renderer.exportGIF({
+            settings,
+            imgAspect,
+            anim: opts.anim,
+            background: opts.background,
+            speed: opts.speed,
+            onProgress: (done, total) =>
+              setGifProgress(Math.round((done / total) * 100)),
+          })
+          const file = new File([blob], "holo-sticker.gif", {
+            type: "image/gif",
+          })
+          // share the actual gif when the platform supports it
+          if (navigator.canShare?.({ files: [file] })) {
+            await navigator.share({ files: [file], text: `${text} ${url}` })
+            return
+          }
+          // otherwise download it so it can be attached to the post
+          const dl = URL.createObjectURL(blob)
+          const a = document.createElement("a")
+          a.href = dl
+          a.download = "holo-sticker.gif"
+          a.click()
+          URL.revokeObjectURL(dl)
+        } catch {
+          // fall through to the plain intent
+        } finally {
+          setExporting(false)
+          setGifProgress(null)
+        }
+      }
+      window.open(
+        `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
+        "_blank",
+        "noopener",
+      )
+    },
+    [image, settings, imgAspect],
+  )
 
   const handleExportGLB = useCallback(async () => {
     const renderer = rendererRef.current
@@ -268,28 +342,6 @@ export default function App() {
               <SelectItem value="4096">4096 × 4096</SelectItem>
             </SelectContent>
           </Select>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const text =
-                  "Just made a holographic sticker with Holosticker ✨ by @jalcowastaken"
-                window.open(
-                  `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent("https://holosticker.dev")}`,
-                  "_blank",
-                  "noopener",
-                )
-              }}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                aria-hidden="true"
-                className="size-3.5"
-              >
-                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117l11.966 15.644Z" />
-              </svg>
-              Share
-            </Button>
             <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>
                 <Button disabled={!image || exporting}>
@@ -396,9 +448,18 @@ export default function App() {
             image={image}
             imgAspect={imgAspect}
             settings={settings}
+            tiltLocked={tiltLocked}
             onRendererReady={handleRendererReady}
           />
         </div>
+        <button
+          type="button"
+          onClick={() => setTiltLocked((l) => !l)}
+          className="absolute bottom-4 left-4 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-[color,background-color] hover:bg-accent hover:text-foreground"
+        >
+          <Kbd>L</Kbd>
+          {tiltLocked ? "Rotation locked" : "Lock rotation"}
+        </button>
         {/* handwritten "follow me on x" note + arrow pointing at the pill */}
         {/* handwritten note; the arrow tip lands on the X icon in the pill */}
         <a
@@ -476,13 +537,28 @@ export default function App() {
       <GifExportDialog
         open={gifDialogOpen}
         onOpenChange={(o) => {
-          if (gifProgress === null) setGifDialogOpen(o)
+          if (gifProgress === null) {
+            setGifDialogOpen(o)
+            if (!o)
+              setGifResult((prev) => {
+                if (prev) URL.revokeObjectURL(prev)
+                return null
+              })
+          }
         }}
         image={image}
         imgAspect={imgAspect}
         settings={settings}
         progress={gifProgress}
+        result={gifResult}
+        onClearResult={() =>
+          setGifResult((prev) => {
+            if (prev) URL.revokeObjectURL(prev)
+            return null
+          })
+        }
         onExport={(opts) => void handleExportGIF(opts)}
+        onShare={(opts) => void handleShareGIF(opts)}
       />
       <Analytics />
     </div>
