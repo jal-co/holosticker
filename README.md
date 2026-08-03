@@ -1,5 +1,7 @@
 # Holosticker
 
+![Holosticker demo](.github/demo.gif)
+
 <p>
   <a href="https://holosticker.dev"><img alt="Website" src="https://shieldcn.dev/badge/holosticker.dev-live-8b5cf6.svg?size=xs&variant=secondary&logo=vercel" /></a>
   <a href="https://github.com/jal-co/holosticker/stargazers"><img alt="GitHub stars" src="https://shieldcn.dev/github/stars/jal-co/holosticker.svg?size=xs&variant=secondary" /></a>
