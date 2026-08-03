@@ -1,4 +1,5 @@
 export type HoloPattern = "linear" | "radial" | "patches"
+export type HoloOverlay = "none" | "triangles" | "squares" | "stripes"
 export type PeelDirection =
   | "top-left"
   | "top"
@@ -16,6 +17,8 @@ export interface StickerSettings {
   border: number
   /** Cut tolerance: interior holes/gaps smaller than this stay foil, 0–0.12 */
   cutTolerance: number
+  /** Refractor facet overlay pattern */
+  overlay: HoloOverlay
   /** Holographic rainbow intensity, 0–1 */
   holoIntensity: number
   /** Rainbow band frequency, 1–20 */
@@ -46,6 +49,7 @@ export const defaultSettings: StickerSettings = {
   size: 0.78,
   border: 0.028,
   cutTolerance: 0.04,
+  overlay: "none",
   holoIntensity: 0.85,
   bands: 9,
   hueShift: 0,

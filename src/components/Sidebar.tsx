@@ -12,6 +12,7 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { Slider } from "@/components/ui/slider"
 import type {
+  HoloOverlay,
   HoloPattern,
   PeelDirection,
   StickerSettings,
@@ -24,6 +25,7 @@ interface Props {
   onChange: (patch: Partial<StickerSettings>) => void
   onUpload: (file: File) => void
   onExport: () => void
+  onExportSettings: () => void
   onReset: () => void
 }
 
@@ -81,6 +83,7 @@ export function Sidebar({
   onChange,
   onUpload,
   onExport,
+  onExportSettings,
   onReset,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -88,12 +91,12 @@ export function Sidebar({
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-sidebar">
       <div className="px-4 py-4">
-        <h1 className="text-sm font-semibold tracking-tight">
-          Holosticker
-        </h1>
-        <p className="text-xs text-muted-foreground">
-          Holographic sticker maker
-        </p>
+        <img
+          src="/logo.png"
+          alt="Holosticker by JALCO"
+          className="h-12 w-auto select-none"
+          draggable={false}
+        />
       </div>
       <Separator />
       <ScrollArea className="min-h-0 flex-1">
@@ -175,6 +178,23 @@ export function Sidebar({
                   <SelectItem value="linear">Linear bands</SelectItem>
                   <SelectItem value="radial">Radial burst</SelectItem>
                   <SelectItem value="patches">Foil patches</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Refractor overlay</Label>
+              <Select
+                value={settings.overlay}
+                onValueChange={(v) => onChange({ overlay: v as HoloOverlay })}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="triangles">Triangles</SelectItem>
+                  <SelectItem value="squares">Squares</SelectItem>
+                  <SelectItem value="stripes">Stripes</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -342,6 +362,13 @@ export function Sidebar({
               onClick={onExport}
             >
               {exporting ? "Exporting…" : "Export PNG"}
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={onExportSettings}
+            >
+              Export settings
             </Button>
             <Button variant="ghost" className="w-full" onClick={onReset}>
               Reset settings

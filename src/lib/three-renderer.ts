@@ -165,6 +165,7 @@ uniform float uBands;
 uniform float uHue;
 uniform float uGrain;
 uniform float uPattern;
+uniform float uOverlay;
 uniform float uPeelOn;
 uniform vec2 uLight;
 
@@ -205,12 +206,33 @@ float patternPhase(vec2 uv) {
   return n * 5.0 + vnoise(uv * 11.0) * 2.5;
 }
 
+// refractor overlay: facet cells (triangles / squares / stripes) that each
+// carry their own diffraction phase, like embossed holo facet foils
+float facetOffset(vec2 uv) {
+  if (uOverlay < 0.5) return 0.0;
+  if (uOverlay < 1.5) { // triangles
+    vec2 g = uv * 9.0;
+    vec2 i = floor(g);
+    vec2 f = fract(g);
+    float t = step(f.x + f.y, 1.0);
+    return hash(i + t * 0.37) * 0.85;
+  }
+  if (uOverlay < 2.5) { // squares
+    return hash(floor(uv * 7.0)) * 0.85;
+  }
+  // diagonal stripes
+  return hash(vec2(floor(dot(uv, normalize(vec2(1.0, 0.6))) * 16.0), 3.0)) * 0.85;
+}
+
 // holofoil diffraction: the hue at each point cycles with the view/reflect
-// direction, so rainbow bands sweep across the foil as it tilts
-vec3 filmColor(float cosT, vec2 uv, vec3 R) {
-  float sweep = dot(R.xy, normalize(vec2(0.8, 0.6))) * (uBands * 0.4);
+// direction, so rainbow bands sweep across the foil as it tilts.
+// flatness damps the view sweep on curled geometry so the fold doesn't
+// alias into thin stripes.
+vec3 filmColor(float cosT, vec2 uv, vec3 R, float flatness) {
+  float sweep = dot(R.xy, normalize(vec2(0.8, 0.6))) * (uBands * 0.4) * flatness;
   float phase = 6.2831853 *
-    (0.35 + 1.15 * (1.0 - cosT) + patternPhase(uv) * 0.18 + sweep + uHue);
+    (0.35 + 1.15 * (1.0 - cosT) + patternPhase(uv) * 0.18 + sweep +
+     facetOffset(uv) + uHue);
   vec3 rain = 0.5 + 0.5 * vec3(sin(phase), sin(phase + 2.094), sin(phase + 4.188));
   return mix(vec3(1.0), rain, uHolo);
 }
@@ -231,7 +253,7 @@ void main() {
     vec3 col = vec3(0.55);
     vec3 env = envSample(Rb, 0.1) * 1.6;
     float fres = 0.4 + 0.6 * pow(1.0 - cosT, 3.0);
-    col += env * (0.5 + 0.5 * fres) * mix(vec3(1.0), filmColor(cosT, vUv, Rb), 0.75);
+    col += env * (0.5 + 0.5 * fres) * mix(vec3(1.0), filmColor(cosT, vUv, Rb, smoothstep(0.25, 0.85, abs(N.z))), 0.75);
     col *= shade;
     outColor = vec4(lin2srgb(col), base.a);
     return;
@@ -251,7 +273,7 @@ void main() {
     vec3 pN = normalize(N + vec3(angleOff, angleOff * 0.7, 0.0));
     vec3 PR = reflect(-V, pN);
     float spark = pow(clamp(dot(pN, V) * 0.5 + 0.5, 0.0, 1.0), 8.0);
-    flakeEnv = envSample(PR, 0.15) * mix(vec3(1.0), filmColor(dot(pN, V), vUv, PR), 0.9);
+    flakeEnv = envSample(PR, 0.15) * mix(vec3(1.0), filmColor(dot(pN, V), vUv, PR, smoothstep(0.25, 0.85, N.z)), 0.9);
     flakeI = clamp(mask * max(spark, 0.2) * 6.0, 0.0, 1.0) * min(uGrain * 2.0, 1.0);
   }
 
@@ -264,7 +286,7 @@ void main() {
   float fres = F0 + (1.0 - F0) * pow(1.0 - cosT, 5.0);
 
   // iridescence, strongest on bright foil, subtle on dark ink
-  vec3 iri = filmColor(cosT, vUv, R);
+  vec3 iri = filmColor(cosT, vUv, R, smoothstep(0.25, 0.85, N.z));
   iri = mix(vec3(1.0), iri, mix(0.55, 1.0, brightness));
 
   // ---- key light (follows the light position control) ----
@@ -337,6 +359,7 @@ export class HoloRenderer {
         uHue: { value: 0 },
         uGrain: { value: 0.35 },
         uPattern: { value: 0 },
+        uOverlay: { value: 0 },
         uPeelOn: { value: 0 },
         uLight: { value: new THREE.Vector2(0.65, 0.7) },
         uCurlH: { value: 0.1 },
@@ -535,6 +558,14 @@ export class HoloRenderer {
     u.uGrain.value = s.grain
     u.uPattern.value =
       s.pattern === "linear" ? 0 : s.pattern === "radial" ? 1 : 2
+    u.uOverlay.value =
+      s.overlay === "none"
+        ? 0
+        : s.overlay === "triangles"
+          ? 1
+          : s.overlay === "squares"
+            ? 2
+            : 3
     u.uPeelOn.value = s.peelAmount > 0.001 ? 1 : 0
     ;(u.uLight.value as THREE.Vector2).set(s.light.x, s.light.y)
 

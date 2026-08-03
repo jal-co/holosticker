@@ -47,6 +47,18 @@ export default function App() {
     }
   }, [settings, imgAspect, imageName])
 
+  const handleExportSettings = useCallback(() => {
+    const blob = new Blob([JSON.stringify(settings, null, 2)], {
+      type: "application/json",
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "holosticker-settings.json"
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [settings])
+
   const handleRendererReady = useCallback((r: HoloRenderer) => {
     rendererRef.current = r
   }, [])
@@ -60,6 +72,7 @@ export default function App() {
         onChange={patch}
         onUpload={handleUpload}
         onExport={handleExport}
+        onExportSettings={handleExportSettings}
         onReset={() => setSettings(defaultSettings)}
       />
       <main
