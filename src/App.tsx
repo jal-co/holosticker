@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Box, ChevronDown, Download, Image, Moon, Sun } from "lucide-react"
+import {
+  Box,
+  ChevronDown,
+  Clapperboard,
+  Download,
+  Image,
+  Moon,
+  Sun,
+} from "lucide-react"
 import { DropdownMenu } from "radix-ui"
 import { Analytics } from "@vercel/analytics/react"
 import { Button } from "@/components/ui/button"
@@ -22,6 +30,7 @@ export default function App() {
   const [imgAspect, setImgAspect] = useState(1)
   const [imageName, setImageName] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [gifProgress, setGifProgress] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
   const [dark, setDark] = useState(
     () =>
@@ -100,6 +109,29 @@ export default function App() {
     a.click()
     URL.revokeObjectURL(url)
   }, [settings])
+
+  const handleExportGIF = useCallback(async () => {
+    const renderer = rendererRef.current
+    if (!renderer) return
+    setExporting(true)
+    try {
+      const blob = await renderer.exportGIF({
+        settings,
+        imgAspect,
+        onProgress: (done, total) =>
+          setGifProgress(Math.round((done / total) * 100)),
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `${(imageName ?? "sticker").replace(/\.[^.]+$/, "")}-holo.gif`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+      setGifProgress(null)
+    }
+  }, [settings, imgAspect, imageName])
 
   const handleExportGLB = useCallback(async () => {
     const renderer = rendererRef.current
@@ -195,7 +227,11 @@ export default function App() {
               <DropdownMenu.Trigger asChild>
                 <Button disabled={!image || exporting}>
                   <Download aria-hidden />
-                  {exporting ? "Exporting…" : "Export"}
+                  {gifProgress !== null
+                    ? `GIF ${gifProgress}%`
+                    : exporting
+                      ? "Exporting…"
+                      : "Export"}
                   <ChevronDown className="opacity-60" aria-hidden />
                 </Button>
               </DropdownMenu.Trigger>
@@ -213,6 +249,19 @@ export default function App() {
                     PNG image
                     <span className="ml-auto text-xs text-muted-foreground">
                       {settings.exportSize}px
+                    </span>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onSelect={() => void handleExportGIF()}
+                    className="flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
+                  >
+                    <Clapperboard
+                      className="size-4 text-muted-foreground"
+                      aria-hidden
+                    />
+                    GIF animation
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      loop
                     </span>
                   </DropdownMenu.Item>
                   <DropdownMenu.Item

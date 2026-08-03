@@ -15,6 +15,7 @@
     "@vercel/analytics": "^2.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "gifenc": "^1.0.3",
     "lucide-react": "^1.28.0",
     "radix-ui": "^1.6.7",
     "react": "^19.2.8",

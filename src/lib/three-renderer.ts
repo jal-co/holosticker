@@ -626,6 +626,72 @@ export class HoloRenderer {
     return blob
   }
 
+  /**
+   * Export an animated GIF: a seamless loop where the sticker tilts in a
+   * circle so the holofoil bands sweep, like turning it in your hand.
+   */
+  async exportGIF(input: {
+    settings: StickerSettings
+    imgAspect: number
+    onProgress?: (done: number, total: number) => void
+  }): Promise<Blob> {
+    const { GIFEncoder, quantize, applyPalette } = await import("gifenc")
+    const size = Math.min(input.settings.exportSize, 800)
+    const frames = 40
+    const delay = 60 // ms -> ~2.4s loop
+
+    const prevW = this.canvas.width
+    const prevH = this.canvas.height
+    const prevTilt = this.tilt.clone()
+    const prevTarget = this.tiltTarget.clone()
+    this.canvas.width = size
+    this.canvas.height = size
+
+    const scratch = document.createElement("canvas")
+    scratch.width = size
+    scratch.height = size
+    const sctx = scratch.getContext("2d", { willReadFrequently: true })!
+
+    const gif = GIFEncoder()
+    for (let f = 0; f < frames; f++) {
+      const a = (f / frames) * Math.PI * 2
+      this.tilt.set(Math.sin(a) * 0.85, Math.cos(a) * 0.55)
+      this.tiltTarget.copy(this.tilt)
+      this.render(input)
+      sctx.clearRect(0, 0, size, size)
+      sctx.drawImage(this.canvas, 0, 0)
+      const { data } = sctx.getImageData(0, 0, size, size)
+      const palette = quantize(data, 256, { format: "rgba4444" })
+      const index = applyPalette(data, palette, "rgba4444")
+      // find a fully transparent palette slot if one exists
+      let transparentIndex = -1
+      for (let i = 0; i < palette.length; i++) {
+        if (palette[i][3] === 0) {
+          transparentIndex = i
+          break
+        }
+      }
+      gif.writeFrame(index, size, size, {
+        palette,
+        delay,
+        transparent: transparentIndex >= 0,
+        transparentIndex: Math.max(transparentIndex, 0),
+        dispose: 2,
+      })
+      input.onProgress?.(f + 1, frames)
+      // yield so the UI can update between frames
+      await new Promise((r) => setTimeout(r))
+    }
+    gif.finish()
+
+    this.canvas.width = prevW
+    this.canvas.height = prevH
+    this.tilt.copy(prevTilt)
+    this.tiltTarget.copy(prevTarget)
+    this.render(input)
+    return new Blob([gif.bytes() as unknown as BlobPart], { type: "image/gif" })
+  }
+
   /** Export the current sticker (peel geometry + die-cut art) as a GLB. */
   async exportGLB(input: {
     settings: StickerSettings
