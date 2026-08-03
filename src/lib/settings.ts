@@ -14,6 +14,8 @@ export interface StickerSettings {
   size: number
   /** Die-cut white/foil border width, 0–0.08 (uv units) */
   border: number
+  /** Cut tolerance: interior holes/gaps smaller than this stay foil, 0–0.12 */
+  cutTolerance: number
   /** Holographic rainbow intensity, 0–1 */
   holoIntensity: number
   /** Rainbow band frequency, 1–20 */
@@ -43,6 +45,7 @@ export interface StickerSettings {
 export const defaultSettings: StickerSettings = {
   size: 0.78,
   border: 0.028,
+  cutTolerance: 0.04,
   holoIntensity: 0.85,
   bands: 9,
   hueShift: 0,

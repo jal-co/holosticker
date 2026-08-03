@@ -5,18 +5,11 @@ import { peelAngles } from "./settings"
 const SEGS = 160
 const MAXD = 160 // distance-field range in pixels
 
-/** Exact euclidean distance transform (Felzenszwalb). */
-function distanceField(alpha: Uint8ClampedArray, w: number, h: number) {
-  const pad = MAXD
-  const W = w + 2 * pad
-  const H = h + 2 * pad
+/** Exact euclidean distance transform of a binary mask (Felzenszwalb). */
+function edt(inside: Uint8Array, W: number, H: number): Float32Array {
   const INF = 1e20
-  const dsq = new Float64Array(W * H).fill(INF)
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (alpha[(y * w + x) * 4 + 3] > 127) dsq[(y + pad) * W + x + pad] = 0
-    }
-  }
+  const dsq = new Float64Array(W * H)
+  for (let i = 0; i < W * H; i++) dsq[i] = inside[i] ? 0 : INF
   const n = Math.max(W, H)
   const f = new Float64Array(n)
   const dOut = new Float64Array(n)
@@ -57,6 +50,40 @@ function distanceField(alpha: Uint8ClampedArray, w: number, h: number) {
   }
   const dist = new Float32Array(W * H)
   for (let i = 0; i < W * H; i++) dist[i] = Math.sqrt(dsq[i])
+  return dist
+}
+
+/**
+ * Distance to the die-cut source shape with cut tolerance: a morphological
+ * closing (dilate by tol, erode by tol) fills interior counters and bridges
+ * gaps smaller than the tolerance, like a real cut path.
+ */
+function distanceField(
+  alpha: Uint8ClampedArray,
+  w: number,
+  h: number,
+  tolPx: number,
+) {
+  const pad = MAXD
+  const W = w + 2 * pad
+  const H = h + 2 * pad
+  const ink = new Uint8Array(W * H)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (alpha[(y * w + x) * 4 + 3] > 127) ink[(y + pad) * W + x + pad] = 1
+    }
+  }
+  let dist = edt(ink, W, H)
+  if (tolPx > 0.5) {
+    // dilate by tol
+    const dilated = new Uint8Array(W * H)
+    for (let i = 0; i < W * H; i++) dilated[i] = dist[i] <= tolPx ? 0 : 1
+    // erode by tol: distance from inside the dilated set to its outside
+    const dIn = edt(dilated, W, H) // dilated stores the COMPLEMENT (1 = outside)
+    const closed = new Uint8Array(W * H)
+    for (let i = 0; i < W * H; i++) closed[i] = dIn[i] > tolPx ? 1 : 0
+    dist = edt(closed, W, H)
+  }
   return { dist, W, pad }
 }
 
@@ -361,7 +388,7 @@ export class HoloRenderer {
   private updateMaps(s: StickerSettings) {
     const src = this.source
     if (!src) return
-    const key = `${s.border}|${src.width}x${src.height}`
+    const key = `${s.border}|${s.cutTolerance}|${src.width}x${src.height}`
     if (key === this.mapsKey) return
     this.mapsKey = key
 
@@ -374,7 +401,8 @@ export class HoloRenderer {
     const ctx = canvas.getContext("2d", { willReadFrequently: true })!
     ctx.drawImage(src, 0, 0, w, h)
     const img = ctx.getImageData(0, 0, w, h)
-    const { dist, W, pad } = distanceField(img.data, w, h)
+    const tolPx = s.cutTolerance * 2.3 * w
+    const { dist, W, pad } = distanceField(img.data, w, h, tolPx)
 
     const borderPx = s.border * 2.3 * w
     const off = Math.ceil(borderPx + 6)

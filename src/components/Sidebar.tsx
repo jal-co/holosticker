@@ -89,7 +89,7 @@ export function Sidebar({
     <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-sidebar">
       <div className="px-4 py-4">
         <h1 className="text-sm font-semibold tracking-tight">
-          Holostick Studio
+          Holosticker
         </h1>
         <p className="text-xs text-muted-foreground">
           Holographic sticker maker
@@ -143,6 +143,15 @@ export function Sidebar({
               step={0.001}
               format={(v) => v.toFixed(3)}
               onChange={(v) => onChange({ border: v })}
+            />
+            <SliderRow
+              label="Cut tolerance"
+              value={settings.cutTolerance}
+              min={0}
+              max={0.12}
+              step={0.005}
+              format={(v) => v.toFixed(3)}
+              onChange={(v) => onChange({ cutTolerance: v })}
             />
           </section>
 
