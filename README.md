@@ -8,18 +8,20 @@
   <a href="https://github.com/sponsors/jal-co"><img alt="Sponsor" src="https://shieldcn.dev/badge/sponsor-%E2%9D%A4-ec4899.svg?size=xs&variant=secondary&logo=githubsponsors" /></a>
 </p>
 
-Holographic sticker studio. Upload an SVG or PNG, tune the foil, tilt it around, and export a realistic holofoil sticker as a transparent PNG.
+Holographic sticker studio. Upload an SVG or PNG, tune the foil, tilt it with your cursor, and export a realistic holofoil sticker as a transparent PNG.
 
 **Live at [holosticker.dev](https://holosticker.dev)**
 
 ## Features
 
-- Real-time three.js render: PBR holofoil with view-dependent diffraction bands, thin-film iridescence, metallic flakes, and studio env reflections
+- Real-time three.js rendering: PBR holofoil with view-dependent diffraction bands, thin-film iridescence, metallic flakes, and studio environment reflections
 - Pointer tilt: rainbow bands sweep across the foil like a real holo card
-- Die-cut border from an exact euclidean distance transform (smooth arcs on square corners)
+- Die-cut border from an exact euclidean distance transform, with cut tolerance (morphological closing) so letter counters and small gaps stay foil like a real cut path
+- Ink control: fade artwork into the foil or densify it into solid print that covers the holo
+- Refractor overlays: triangle, square, and stripe facet patterns with per-facet diffraction phase
 - 3D peel: graded hinge bend with conical curl and a glossy foil liner backside
-- Sidebar props: size, border, pattern, intensity, band frequency, hue shift, grain, light, peel direction/amount/curl, shadow, background
-- Export at 1024 / 2048 / 4096 px with transparency
+- Dark mode (toggle in the toolbar, or press <kbd>D</kbd>)
+- Save / import settings as JSON; export PNG at 1024 / 2048 / 4096 with transparency
 
 ## Run
 
@@ -31,6 +33,14 @@ npm run dev
 ## Stack
 
 Vite, React, TypeScript, Tailwind CSS v4, shadcn/ui, three.js. Deployed on Vercel.
+
+## Deploy
+
+The app is a static Vite build - Vercel auto-detects it:
+
+```sh
+vercel --prod
+```
 
 ## Support
 
