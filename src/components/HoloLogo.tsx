@@ -44,9 +44,22 @@ export function HoloLogo() {
       raf = requestAnimationFrame(draw)
     }
     draw()
+
+    // follow the cursor anywhere on the page
+    const onMove = (e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect()
+      const cx = rect.left + rect.width / 2
+      const cy = rect.top + rect.height / 2
+      renderer.setTilt(
+        Math.max(-1, Math.min(1, (e.clientX - cx) / 500)),
+        Math.max(-1, Math.min(1, (cy - e.clientY) / 500)),
+      )
+    }
+    window.addEventListener("pointermove", onMove)
     return () => {
       cancelled = true
       cancelAnimationFrame(raf)
+      window.removeEventListener("pointermove", onMove)
     }
   }, [])
 
@@ -56,14 +69,6 @@ export function HoloLogo() {
       aria-label="Holosticker by JALCO"
       role="img"
       className="h-14 w-full touch-none"
-      onPointerMove={(e) => {
-        const rect = e.currentTarget.getBoundingClientRect()
-        rendererRef.current?.setTilt(
-          ((e.clientX - rect.left) / rect.width) * 2 - 1,
-          1 - ((e.clientY - rect.top) / rect.height) * 2,
-        )
-      }}
-      onPointerLeave={() => rendererRef.current?.setTilt(0, 0)}
     />
   )
 }
