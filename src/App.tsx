@@ -11,6 +11,7 @@ export default function App() {
   const [imgAspect, setImgAspect] = useState(1)
   const [imageName, setImageName] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const rendererRef = useRef<HoloRenderer | null>(null)
 
   const patch = useCallback(
@@ -62,14 +63,33 @@ export default function App() {
         onReset={() => setSettings(defaultSettings)}
       />
       <main
-        className="flex min-w-0 flex-1 items-center justify-center p-8"
-        onDragOver={(e) => e.preventDefault()}
+        className="relative flex min-w-0 flex-1 items-center justify-center p-8"
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragging(true)
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return
+          setDragging(false)
+        }}
         onDrop={(e) => {
           e.preventDefault()
+          setDragging(false)
           const f = e.dataTransfer.files?.[0]
           if (f) void handleUpload(f)
         }}
       >
+        <div
+          aria-hidden
+          className={
+            "pointer-events-none absolute inset-4 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-ring/60 bg-background/60 transition-opacity duration-150 ease-out " +
+            (dragging ? "opacity-100" : "opacity-0")
+          }
+        >
+          <p className="text-sm font-medium text-muted-foreground">
+            Drop artwork to upload
+          </p>
+        </div>
         <StickerCanvas
           image={image}
           imgAspect={imgAspect}
