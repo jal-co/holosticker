@@ -121,7 +121,7 @@ export default function App() {
   }, [])
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-background text-foreground">
+    <div className="flex h-dvh flex-col-reverse overflow-hidden bg-background text-foreground md:flex-row">
       <Sidebar
         settings={settings}
         imageName={imageName}
@@ -133,7 +133,7 @@ export default function App() {
         onReset={() => setSettings(defaultSettings)}
       />
       <main
-        className="relative flex min-w-0 flex-1 flex-col"
+        className="relative flex h-[52dvh] min-w-0 shrink-0 flex-col md:h-auto md:flex-1"
         onDragOver={(e) => {
           e.preventDefault()
           setDragging(true)
@@ -205,7 +205,7 @@ export default function App() {
           target="_blank"
           rel="noreferrer"
           aria-label="Follow jalcowastaken on X"
-          className="group absolute bottom-16 right-[5.5rem] flex flex-col items-end select-none text-orange-500 transition-colors hover:text-orange-700"
+          className="group absolute bottom-16 right-[5.5rem] hidden flex-col items-end select-none text-orange-500 transition-colors hover:text-orange-700 md:flex"
         >
           <span
             className="block -rotate-6 pr-8 text-lg transition-transform group-hover:-rotate-3 group-hover:scale-105"

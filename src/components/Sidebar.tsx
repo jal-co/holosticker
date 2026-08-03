@@ -138,7 +138,7 @@ export function Sidebar({
   const settingsFileRef = useRef<HTMLInputElement>(null)
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-sidebar">
+    <aside className="flex min-h-0 w-full flex-1 flex-col border-t bg-sidebar md:h-full md:w-80 md:flex-none md:shrink-0 md:border-t-0 md:border-r">
       <div className="px-4 py-3">
         <HoloLogo follow={!imageName} />
       </div>
