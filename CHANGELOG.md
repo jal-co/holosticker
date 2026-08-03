@@ -1,5 +1,15 @@
 # holosticker
 
+## 1.2.0
+
+### Minor Changes
+
+- 0723829: 3D color layers: separate artwork colors into stacked layers with per-layer foil finishes and adjustable depth
+
+### Patch Changes
+
+- 4e00514: Fix PNG/GIF exports cropping the sticker: the preview render loop no longer resizes the canvas mid-export
+
 ## 1.1.1
 
 ### Patch Changes
