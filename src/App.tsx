@@ -7,6 +7,7 @@ import {
   History,
   Image,
   Moon,
+  Share2,
   Sun,
 } from "lucide-react"
 import { DropdownMenu } from "radix-ui"
@@ -250,6 +251,21 @@ export default function App() {
               <SelectItem value="4096">4096 × 4096</SelectItem>
             </SelectContent>
           </Select>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const text =
+                  "Just made a holographic sticker with Holosticker ✨ by @jalcowastaken"
+                window.open(
+                  `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent("https://holosticker.dev")}`,
+                  "_blank",
+                  "noopener",
+                )
+              }}
+            >
+              <Share2 aria-hidden />
+              Share
+            </Button>
             <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>
                 <Button disabled={!image || exporting}>
