@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { FileDown, ImagePlus, RotateCcw, X } from "lucide-react"
+import { FileDown, FileUp, ImagePlus, RotateCcw, X } from "lucide-react"
 import { HoloLogo } from "@/components/HoloLogo"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -28,6 +28,7 @@ interface Props {
   onUpload: (file: File) => void
   onRemove: () => void
   onExportSettings: () => void
+  onImportSettings: (file: File) => void
   onReset: () => void
 }
 
@@ -130,9 +131,11 @@ export function Sidebar({
   onUpload,
   onRemove,
   onExportSettings,
+  onImportSettings,
   onReset,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const settingsFileRef = useRef<HTMLInputElement>(null)
 
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-sidebar">
@@ -409,6 +412,17 @@ export function Sidebar({
                 </SelectContent>
               </Select>
             </div>
+            <input
+              ref={settingsFileRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) onImportSettings(f)
+                e.target.value = ""
+              }}
+            />
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -418,7 +432,17 @@ export function Sidebar({
                 title="Download the current sliders as a JSON file"
               >
                 <FileDown aria-hidden />
-                Save settings
+                Save
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => settingsFileRef.current?.click()}
+                title="Load a saved settings JSON file"
+              >
+                <FileUp aria-hidden />
+                Import
               </Button>
               <Button
                 variant="ghost"
