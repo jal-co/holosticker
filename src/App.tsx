@@ -90,7 +90,7 @@ export default function App() {
         onReset={() => setSettings(defaultSettings)}
       />
       <main
-        className="relative flex min-w-0 flex-1 items-center justify-center p-8"
+        className="relative flex min-w-0 flex-1 flex-col"
         onDragOver={(e) => {
           e.preventDefault()
           setDragging(true)
@@ -106,7 +106,7 @@ export default function App() {
           if (f) void handleUpload(f)
         }}
       >
-        <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+        <header className="flex h-14 shrink-0 items-center justify-end gap-2 border-b bg-background px-4">
           <Select
             value={String(settings.exportSize)}
             onValueChange={(v) => patch({ exportSize: Number(v) })}
@@ -124,7 +124,7 @@ export default function App() {
             <Download aria-hidden />
             {exporting ? "Exporting…" : "Export PNG"}
           </Button>
-        </div>
+        </header>
         <div
           aria-hidden
           className={
@@ -136,12 +136,14 @@ export default function App() {
             Drop artwork to upload
           </p>
         </div>
-        <StickerCanvas
-          image={image}
-          imgAspect={imgAspect}
-          settings={settings}
-          onRendererReady={handleRendererReady}
-        />
+        <div className="min-h-0 flex-1">
+          <StickerCanvas
+            image={image}
+            imgAspect={imgAspect}
+            settings={settings}
+            onRendererReady={handleRendererReady}
+          />
+        </div>
         <a
           href="https://github.com/jal-co/holosticker"
           target="_blank"

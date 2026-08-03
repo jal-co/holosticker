@@ -48,10 +48,11 @@ export function StickerCanvas({
     let raf = 0
     const draw = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
-      const size = Math.round(canvas.clientWidth * dpr)
-      if (size > 0 && (canvas.width !== size || canvas.height !== size)) {
-        canvas.width = size
-        canvas.height = size
+      const w = Math.round(canvas.clientWidth * dpr)
+      const h = Math.round(canvas.clientHeight * dpr)
+      if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
+        canvas.width = w
+        canvas.height = h
       }
       renderer.render({ settings, imgAspect })
       raf = requestAnimationFrame(draw)
@@ -63,7 +64,7 @@ export function StickerCanvas({
   return (
     <div
       className={cn(
-        "relative aspect-square w-full max-w-[720px] overflow-hidden rounded-xl border shadow-sm",
+        "relative size-full overflow-hidden",
         bgClass[settings.background],
       )}
     >
