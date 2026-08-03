@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Clapperboard,
   Download,
+  History,
   Image,
   Moon,
   Sun,
@@ -18,6 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { ChangelogDialog } from "@/components/ChangelogDialog"
+import { GifExportDialog } from "@/components/GifExportDialog"
+import { currentVersion } from "@/lib/changelog"
 import { Sidebar } from "@/components/Sidebar"
 import { StickerCanvas } from "@/components/StickerCanvas"
 import { loadImageFile } from "@/lib/load-image"
@@ -31,6 +35,8 @@ export default function App() {
   const [imageName, setImageName] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [gifProgress, setGifProgress] = useState<number | null>(null)
+  const [gifDialogOpen, setGifDialogOpen] = useState(false)
+  const [changelogOpen, setChangelogOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [dark, setDark] = useState(
     () =>
@@ -110,28 +116,37 @@ export default function App() {
     URL.revokeObjectURL(url)
   }, [settings])
 
-  const handleExportGIF = useCallback(async () => {
-    const renderer = rendererRef.current
-    if (!renderer) return
-    setExporting(true)
-    try {
-      const blob = await renderer.exportGIF({
-        settings,
-        imgAspect,
-        onProgress: (done, total) =>
-          setGifProgress(Math.round((done / total) * 100)),
-      })
+  const handleExportGIF = useCallback(
+    async (opts: {
+      anim: "sweep" | "peel"
+      background: "transparent" | "white" | "black"
+    }) => {
+      const renderer = rendererRef.current
+      if (!renderer) return
+      setExporting(true)
+      try {
+        const blob = await renderer.exportGIF({
+          settings,
+          imgAspect,
+          anim: opts.anim,
+          background: opts.background,
+          onProgress: (done, total) =>
+            setGifProgress(Math.round((done / total) * 100)),
+        })
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
       a.download = `${(imageName ?? "sticker").replace(/\.[^.]+$/, "")}-holo.gif`
       a.click()
       URL.revokeObjectURL(url)
-    } finally {
-      setExporting(false)
-      setGifProgress(null)
-    }
-  }, [settings, imgAspect, imageName])
+      } finally {
+        setExporting(false)
+        setGifProgress(null)
+        setGifDialogOpen(false)
+      }
+    },
+    [settings, imgAspect, imageName],
+  )
 
   const handleExportGLB = useCallback(async () => {
     const renderer = rendererRef.current
@@ -209,6 +224,16 @@ export default function App() {
           >
             {dark ? <Sun aria-hidden /> : <Moon aria-hidden />}
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => setChangelogOpen(true)}
+          >
+            <History aria-hidden />
+            v{currentVersion}
+          </Button>
+          <div className="flex-1" />
           <div className="flex items-center gap-2">
             <Select
             value={String(settings.exportSize)}
@@ -252,7 +277,7 @@ export default function App() {
                     </span>
                   </DropdownMenu.Item>
                   <DropdownMenu.Item
-                    onSelect={() => void handleExportGIF()}
+                    onSelect={() => setGifDialogOpen(true)}
                     className="flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
                   >
                     <Clapperboard
@@ -364,6 +389,18 @@ export default function App() {
           </a>
         </div>
       </main>
+      <ChangelogDialog open={changelogOpen} onOpenChange={setChangelogOpen} />
+      <GifExportDialog
+        open={gifDialogOpen}
+        onOpenChange={(o) => {
+          if (gifProgress === null) setGifDialogOpen(o)
+        }}
+        image={image}
+        imgAspect={imgAspect}
+        settings={settings}
+        progress={gifProgress}
+        onExport={(opts) => void handleExportGIF(opts)}
+      />
       <Analytics />
     </div>
   )

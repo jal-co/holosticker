@@ -313,6 +313,25 @@ void main() {
   outColor = vec4(lin2srgb(color), base.a);
 }`
 
+export type GifAnim = "sweep" | "peel"
+
+/**
+ * Peel pose over a loop: rest → peel fully → fly off out of frame →
+ * fly back in → smooth back down → rest.
+ */
+export function gifPeelPose(t: number): { peel: number; fly: number } {
+  const ease = (u: number) => 0.5 - 0.5 * Math.cos(u * Math.PI)
+  const ramp = (a: number, b: number) =>
+    ease(Math.min(1, Math.max(0, (t - a) / (b - a))))
+  // one continuous motion: the exit overlaps the end of the fold travel,
+  // so the sticker keeps moving out along the peel as it comes free
+  if (t < 0.5) {
+    return { peel: ramp(0.04, 0.42), fly: ramp(0.3, 0.5) }
+  }
+  // mirrored on the way back: slides in along the peel, then rolls down
+  return { peel: 1 - ramp(0.6, 0.96), fly: 1 - ramp(0.5, 0.7) }
+}
+
 export class HoloRenderer {
   canvas: HTMLCanvasElement
   private renderer: THREE.WebGLRenderer
@@ -550,13 +569,28 @@ export class HoloRenderer {
     this.material.uniforms.uCurlH.value = Math.max(0.15, ext * 0.7)
   }
 
-  render(input: { settings: StickerSettings; imgAspect: number }) {
+  render(input: {
+    settings: StickerSettings
+    imgAspect: number
+    /** 0..1: slides the sticker out of frame toward the peel corner */
+    flyOff?: number
+  }) {
     const s = input.settings
     this.updateMaps(s)
     if (this.source) this.updateGeometry(s)
 
     this.mesh.visible = this.source !== null
     this.mesh.scale.set(s.size * 1.15, s.size * 1.15, 1)
+
+    // fly-off: continue the peel motion out of frame, toward the peel
+    // side and lifted off the surface
+    const fly = input.flyOff ?? 0
+    const flyAng = peelAngles[s.peelDirection]
+    this.mesh.position.set(
+      Math.cos(flyAng) * fly * 2.6,
+      Math.sin(flyAng) * fly * 2.6,
+      fly * 0.35,
+    )
 
     // smooth pointer tilt: makes reflections and iridescence sweep
     this.tilt.lerp(this.tiltTarget, 0.09)
@@ -633,12 +667,16 @@ export class HoloRenderer {
   async exportGIF(input: {
     settings: StickerSettings
     imgAspect: number
+    anim?: GifAnim
+    background?: "transparent" | "white" | "black"
     onProgress?: (done: number, total: number) => void
   }): Promise<Blob> {
     const { GIFEncoder, quantize, applyPalette } = await import("gifenc")
+    const anim = input.anim ?? "sweep"
+    const bg = input.background ?? input.settings.background
     const size = Math.min(input.settings.exportSize, 800)
-    const frames = 40
-    const delay = 60 // ms -> ~2.4s loop
+    const frames = anim === "peel" ? 48 : 40
+    const delay = 60 // ms per frame
 
     const prevW = this.canvas.width
     const prevH = this.canvas.height
@@ -654,15 +692,31 @@ export class HoloRenderer {
 
     const gif = GIFEncoder()
     for (let f = 0; f < frames; f++) {
-      const a = (f / frames) * Math.PI * 2
-      this.tilt.set(Math.sin(a) * 0.85, Math.cos(a) * 0.55)
+      const t = f / frames
+      let frameSettings = input.settings
+      let flyOff = 0
+      if (anim === "sweep") {
+        const a = t * Math.PI * 2
+        this.tilt.set(Math.sin(a) * 0.85, Math.cos(a) * 0.55)
+      } else {
+        // full peel-off, out of frame, then back on
+        this.tilt.set(0, 0)
+        const pose = gifPeelPose(t)
+        frameSettings = { ...input.settings, peelAmount: pose.peel }
+        flyOff = pose.fly
+      }
       this.tiltTarget.copy(this.tilt)
-      this.render(input)
+      this.render({ settings: frameSettings, imgAspect: input.imgAspect, flyOff })
       sctx.clearRect(0, 0, size, size)
+      if (bg !== "transparent") {
+        sctx.fillStyle = bg === "white" ? "oklch(1 0 0)" : "oklch(0 0 0)"
+        sctx.fillRect(0, 0, size, size)
+      }
       sctx.drawImage(this.canvas, 0, 0)
       const { data } = sctx.getImageData(0, 0, size, size)
-      const palette = quantize(data, 256, { format: "rgba4444" })
-      const index = applyPalette(data, palette, "rgba4444")
+      const format = bg === "transparent" ? "rgba4444" : "rgb444"
+      const palette = quantize(data, 256, { format })
+      const index = applyPalette(data, palette, format)
       // find a fully transparent palette slot if one exists
       let transparentIndex = -1
       for (let i = 0; i < palette.length; i++) {
@@ -674,7 +728,7 @@ export class HoloRenderer {
       gif.writeFrame(index, size, size, {
         palette,
         delay,
-        transparent: transparentIndex >= 0,
+        transparent: bg === "transparent" && transparentIndex >= 0,
         transparentIndex: Math.max(transparentIndex, 0),
         dispose: 2,
       })
