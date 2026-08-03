@@ -4,9 +4,11 @@ import { defaultSettings, type StickerSettings } from "@/lib/settings"
 
 const logoSettings: StickerSettings = {
   ...defaultSettings,
-  size: 3.6,
+  size: 3.0,
   border: 0.02,
-  peelAmount: 0,
+  peelAmount: 0.26,
+  peelDirection: "top-right",
+  curl: 0.07,
   shadow: 0,
   background: "transparent",
 }
@@ -68,7 +70,7 @@ export function HoloLogo() {
       ref={canvasRef}
       aria-label="Holosticker by JALCO"
       role="img"
-      className="h-14 w-full touch-none"
+      className="h-20 w-full touch-none"
     />
   )
 }
