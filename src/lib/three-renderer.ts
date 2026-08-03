@@ -465,7 +465,9 @@ export class HoloRenderer {
       const u = c - foldC
       if (s.peelAmount > 0.001 && u > 0) {
         const lq = Math.abs(ux * perp.x + uy * perp.y - qc) / ext
-        const rEff = r * Math.max(0.45, 1 + cone * (lq - 0.55) * 1.2)
+        // smooth cone falloff: zero slope at the centerline (no crease),
+        // no hard clamp
+        const rEff = r * (0.55 + cone * ((1.15 * lq * lq) / (lq + 0.45)))
         // graded hinge rotation: the bend saturates, so curvature
         // concentrates at the fold and the flap tail stays flat
         const theta = maxTheta * (1 - Math.exp(-u / rEff))
