@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Box, Download, Moon, Sun } from "lucide-react"
+import { Box, ChevronDown, Download, Image, Moon, Sun } from "lucide-react"
+import { DropdownMenu } from "radix-ui"
 import { Analytics } from "@vercel/analytics/react"
 import { Button } from "@/components/ui/button"
 import {
@@ -190,19 +191,40 @@ export default function App() {
               <SelectItem value="4096">4096 × 4096</SelectItem>
             </SelectContent>
           </Select>
-            <Button
-              variant="outline"
-              disabled={!image || exporting}
-              onClick={handleExportGLB}
-              title="Export as a 3D model (glTF binary)"
-            >
-              <Box aria-hidden />
-              GLB
-            </Button>
-            <Button disabled={!image || exporting} onClick={handleExport}>
-              <Download aria-hidden />
-              {exporting ? "Exporting…" : "Export PNG"}
-            </Button>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <Button disabled={!image || exporting}>
+                  <Download aria-hidden />
+                  {exporting ? "Exporting…" : "Export"}
+                  <ChevronDown className="opacity-60" aria-hidden />
+                </Button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  align="end"
+                  sideOffset={6}
+                  className="z-50 min-w-44 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
+                >
+                  <DropdownMenu.Item
+                    onSelect={() => void handleExport()}
+                    className="flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
+                  >
+                    <Image className="size-4 text-muted-foreground" aria-hidden />
+                    PNG image
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {settings.exportSize}px
+                    </span>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onSelect={() => void handleExportGLB()}
+                    className="flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
+                  >
+                    <Box className="size-4 text-muted-foreground" aria-hidden />
+                    GLB 3D model
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           </div>
         </header>
         <div
