@@ -145,12 +145,15 @@ export default function App() {
           />
         </div>
         {/* handwritten "follow me on x" note + arrow pointing at the pill */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute right-24 bottom-10 select-none text-muted-foreground"
+        <a
+          href="https://x.com/jalcowastaken"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Follow jalcowastaken on X"
+          className="group absolute right-24 bottom-10 select-none text-violet-500 transition-colors hover:text-fuchsia-500"
         >
           <span
-            className="block -rotate-6 text-lg"
+            className="block -rotate-6 text-lg transition-transform group-hover:-rotate-3 group-hover:scale-105"
             style={{
               fontFamily: '"Bradley Hand", "Segoe Script", "Comic Sans MS", cursive',
             }}
@@ -166,12 +169,12 @@ export default function App() {
             strokeWidth="1.8"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="ml-16 mt-0.5"
+            className="ml-16 mt-0.5 transition-transform group-hover:translate-x-1 group-hover:translate-y-0.5"
           >
             <path d="M6 4c14 22 40 34 70 32" pathLength="1" />
             <path d="M68 28l9 8-12 3" />
           </svg>
-        </div>
+        </a>
         <div className="absolute right-4 bottom-4 flex items-center gap-0.5 rounded-full border bg-background/80 p-1 shadow-sm backdrop-blur">
           <a
             href="https://github.com/jal-co/holosticker"
