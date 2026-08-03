@@ -19,6 +19,8 @@ export interface StickerSettings {
   cutTolerance: number
   /** Refractor facet overlay pattern */
   overlay: HoloOverlay
+  /** Ink visibility: 0 = foil only, 1 = as uploaded, up to 2 = densified */
+  ink: number
   /** Holographic rainbow intensity, 0–1 */
   holoIntensity: number
   /** Rainbow band frequency, 1–20 */
@@ -50,6 +52,7 @@ export const defaultSettings: StickerSettings = {
   border: 0.028,
   cutTolerance: 0.04,
   overlay: "none",
+  ink: 1,
   holoIntensity: 0.85,
   bands: 9,
   hueShift: 0,

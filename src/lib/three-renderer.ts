@@ -166,6 +166,7 @@ uniform float uHue;
 uniform float uGrain;
 uniform float uPattern;
 uniform float uOverlay;
+uniform float uInk;
 uniform float uPeelOn;
 uniform vec2 uLight;
 
@@ -262,6 +263,9 @@ void main() {
   vec3 R = reflect(-V, N);
   float cosT = clamp(dot(N, V), 0.0, 1.0);
   float brightness = lum(base.rgb);
+  // ink > 100% also deepens the ink itself
+  base.rgb = mix(base.rgb, base.rgb * base.rgb,
+                 max(uInk - 1.0, 0.0) * (1.0 - brightness) * 0.8);
 
   // ---- metallic flakes ----
   float flakeI = 0.0;
@@ -298,6 +302,9 @@ void main() {
   vec3 spec = env * fres * iri * (1.0 - rough * 0.6) * 1.8;
   spec += iri * specKey * 0.6;
   spec *= mix(0.3, 1.0, brightness); // dark ink keeps sheen but stays dark
+  // ink > 100%: dark ink covers the holo, reading as solid print
+  float inkCover = max(uInk - 1.0, 0.0) * (1.0 - brightness);
+  spec *= 1.0 - inkCover * 0.85;
   vec3 color = diffuse + spec + flakeEnv * flakeI * 0.5;
 
   // slight shadowing where the sheet curls up from the surface
@@ -360,6 +367,7 @@ export class HoloRenderer {
         uGrain: { value: 0.35 },
         uPattern: { value: 0 },
         uOverlay: { value: 0 },
+        uInk: { value: 1 },
         uPeelOn: { value: 0 },
         uLight: { value: new THREE.Vector2(0.65, 0.7) },
         uCurlH: { value: 0.1 },
@@ -411,7 +419,7 @@ export class HoloRenderer {
   private updateMaps(s: StickerSettings) {
     const src = this.source
     if (!src) return
-    const key = `${s.border}|${s.cutTolerance}|${src.width}x${src.height}`
+    const key = `${s.border}|${s.cutTolerance}|${s.ink}|${src.width}x${src.height}`
     if (key === this.mapsKey) return
     this.mapsKey = key
 
@@ -453,7 +461,10 @@ export class HoloRenderer {
         let b = 220
         if (inArt) {
           const i = (ay * w + ax) * 4
-          const a = img.data[i + 3] / 255
+          // ink control: <1 fades ink into the foil, >1 densifies soft edges
+          const a0 = img.data[i + 3] / 255
+          const a =
+            Math.min(1, s.ink) * Math.pow(a0, 1 / Math.max(s.ink, 1))
           r = Math.round(r * (1 - a) + img.data[i] * a)
           g = Math.round(g * (1 - a) + img.data[i + 1] * a)
           b = Math.round(b * (1 - a) + img.data[i + 2] * a)
@@ -567,6 +578,7 @@ export class HoloRenderer {
             ? 2
             : 3
     u.uPeelOn.value = s.peelAmount > 0.001 ? 1 : 0
+    u.uInk.value = s.ink
     ;(u.uLight.value as THREE.Vector2).set(s.light.x, s.light.y)
 
     // blob shadow follows sticker size, offset away from the light

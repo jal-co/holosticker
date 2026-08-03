@@ -203,6 +203,15 @@ export function Sidebar({
               onChange={(v) => onChange({ border: v })}
             />
             <SliderRow
+              label="Ink"
+              value={settings.ink}
+              min={0}
+              max={2}
+              step={0.01}
+              format={(v) => `${Math.round(v * 100)}%`}
+              onChange={(v) => onChange({ ink: v })}
+            />
+            <SliderRow
               label="Cut tolerance"
               value={settings.cutTolerance}
               min={0}

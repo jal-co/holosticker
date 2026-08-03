@@ -1,5 +1,5 @@
-import { useCallback, useRef, useState } from "react"
-import { Download } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { Download, Moon, Sun } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -21,6 +21,31 @@ export default function App() {
   const [imageName, setImageName] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [dragging, setDragging] = useState(false)
+  const [dark, setDark] = useState(
+    () =>
+      (localStorage.getItem("holosticker-theme") ??
+        (matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light")) === "dark",
+  )
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark)
+    localStorage.setItem("holosticker-theme", dark ? "dark" : "light")
+  }, [dark])
+
+  // "D" toggles dark mode
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "d" || e.metaKey || e.ctrlKey || e.altKey)
+        return
+      const t = e.target as HTMLElement
+      if (t.closest("input, textarea, select, [contenteditable]")) return
+      setDark((d) => !d)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
   const rendererRef = useRef<HoloRenderer | null>(null)
 
   const patch = useCallback(
@@ -123,8 +148,18 @@ export default function App() {
           if (f) void handleUpload(f)
         }}
       >
-        <header className="flex h-14 shrink-0 items-center justify-end gap-2 border-b bg-background px-4">
-          <Select
+        <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b bg-sidebar px-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+            title="Toggle dark mode (D)"
+            onClick={() => setDark((d) => !d)}
+          >
+            {dark ? <Sun aria-hidden /> : <Moon aria-hidden />}
+          </Button>
+          <div className="flex items-center gap-2">
+            <Select
             value={String(settings.exportSize)}
             onValueChange={(v) => patch({ exportSize: Number(v) })}
           >
@@ -137,10 +172,11 @@ export default function App() {
               <SelectItem value="4096">4096 × 4096</SelectItem>
             </SelectContent>
           </Select>
-          <Button disabled={!image || exporting} onClick={handleExport}>
-            <Download aria-hidden />
-            {exporting ? "Exporting…" : "Export PNG"}
-          </Button>
+            <Button disabled={!image || exporting} onClick={handleExport}>
+              <Download aria-hidden />
+              {exporting ? "Exporting…" : "Export PNG"}
+            </Button>
+          </div>
         </header>
         <div
           aria-hidden
@@ -168,7 +204,7 @@ export default function App() {
           target="_blank"
           rel="noreferrer"
           aria-label="Follow jalcowastaken on X"
-          className="group absolute bottom-16 right-[5.5rem] flex flex-col items-end select-none text-violet-500 transition-colors hover:text-fuchsia-500"
+          className="group absolute bottom-16 right-[5.5rem] flex flex-col items-end select-none text-orange-500 transition-colors hover:text-orange-700"
         >
           <span
             className="block -rotate-6 pr-8 text-lg transition-transform group-hover:-rotate-3 group-hover:scale-105"
