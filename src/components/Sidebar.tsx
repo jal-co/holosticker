@@ -325,7 +325,7 @@ export function Sidebar({
               <div
                 role="radiogroup"
                 aria-label="Peel direction"
-                className="grid w-fit grid-cols-3 gap-1"
+                className="mx-auto grid w-fit grid-cols-3 gap-1"
               >
                 {directionPad.map((d, i) =>
                   d ? (
