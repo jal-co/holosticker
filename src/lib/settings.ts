@@ -51,7 +51,7 @@ export const defaultSettings: StickerSettings = {
   peelDirection: "top-right",
   peelAmount: 0.22,
   curl: 0.09,
-  shadow: 0.6,
+  shadow: 0,
   light: { x: 0.65, y: 0.7 },
   background: "transparent",
   exportSize: 2048,
