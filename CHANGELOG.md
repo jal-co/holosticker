@@ -1,5 +1,16 @@
 # holosticker
 
+## 1.5.0
+
+### Minor Changes
+
+- 30f1a73: Reliable GIF export flow with in-dialog result preview and gesture-driven save, Share on X posts the actual encoded GIF, "L" locks canvas rotation (with kbd hint) and locked tilt bakes into PNG exports, smooth peel lighting in GIF loops, and hardened keyboard shortcuts
+
+### Patch Changes
+
+- 479da71: Exported component holds its tilt when the cursor leaves instead of animating back to center
+- 5fd754f: Component export downloads reliably: the tsx and artwork files no longer race each other
+
 ## 1.4.0
 
 ### Minor Changes
