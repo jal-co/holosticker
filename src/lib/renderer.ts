@@ -19,11 +19,13 @@ out vec4 outColor;
 uniform sampler2D uTex;
 uniform sampler2D uShapeTex;
 uniform vec2 uShapeScale; // art extent inside the padded shape texture
+uniform sampler2D uBackTex;
+uniform vec2 uBackScale;
+uniform float uBack;      // kiss-cut backing on/off
 uniform float uHasTex;
 uniform vec2 uImgScale;   // aspect-fit scale of image inside sticker area
 uniform float uScale;     // sticker size
 uniform float uBorder;    // die-cut border width (uv)
-uniform float uCut;       // shape threshold on the blurred alpha
 uniform float uHolo;
 uniform float uBands;
 uniform float uHue;
@@ -93,16 +95,39 @@ float artAlpha(vec2 uv) {
   return texture(uTex, t).a;
 }
 
-// die-cut sticker shape (art + border), from a pre-blurred alpha texture.
-// Thresholding a gaussian-blurred alpha dilates by ~the border width while
-// rounding corners and bridging notches, like a real smooth cut line.
+// dilated alpha = die-cut sticker shape (art + border)
 float shapeMask(vec2 uv) {
+  float m = artAlpha(uv);
+  if (uBorder >= 0.0005) {
+    const int DIRS = 16;
+    for (int i = 0; i < DIRS; i++) {
+      float a = 6.2831853 * float(i) / float(DIRS);
+      vec2 dd = vec2(cos(a), sin(a));
+      m = max(m, artAlpha(uv + dd * uBorder));
+      m = max(m, artAlpha(uv + dd * uBorder * 0.55));
+    }
+  }
+  // crisp edge, antialiased ~one screen pixel wide
+  float w = clamp(fwidth(m) * 0.75, uPx, 0.25);
+  return smoothstep(0.5 - w, 0.5 + w, m);
+}
+
+// blurred shape value, for soft contact shadow of the sticker on the backing
+float shapeBlur(vec2 uv) {
   vec2 t = stickerUv(uv);
   vec2 st = (t - 0.5) * uShapeScale + 0.5;
   if (st.x < 0.0 || st.x > 1.0 || st.y < 0.0 || st.y > 1.0) return 0.0;
-  float m = texture(uShapeTex, st).a;
+  return texture(uShapeTex, st).a;
+}
+
+// backing sheet mask: a wider, rounder contour around the sticker
+float backMask(vec2 uv) {
+  vec2 t = stickerUv(uv);
+  vec2 st = (t - 0.5) * uBackScale + 0.5;
+  if (st.x < 0.0 || st.x > 1.0 || st.y < 0.0 || st.y > 1.0) return 0.0;
+  float m = texture(uBackTex, st).a;
   float w = clamp(fwidth(m) * 0.75, 0.004, 0.25);
-  return smoothstep(uCut - w, uCut + w, m);
+  return smoothstep(0.11 - w, 0.11 + w, m);
 }
 
 // ---------- holographic foil ----------
@@ -180,49 +205,60 @@ void main() {
   float t0 = uPeel * ext * 2.05;                    // fold line
   float curlW = uCurl * 3.14159;                    // visible back band width
 
-  vec4 col = vec4(0.0);
+  float lipT = t0 + curlW;
+  float sh = 0.0;
+  float caster = 0.0;
+  if (uPeel > 0.001) {
+    // shadow the flap casts just past its lip, only under the flap silhouette
+    sh = (1.0 - smoothstep(0.0, 0.05, t - lipT)) *
+         smoothstep(-0.008, 0.008, t - lipT);
+    caster = shapeMask(uv - (t - t0 + curlW) * d);
+  }
 
+  // ---- sticker layer (front + curled flap); t < t0 is peeled away ----
+  vec4 st = vec4(0.0);
   if (t >= t0) {
-    // flat front region (the part still stuck down)
-    col = frontFace(uv);
+    st = frontFace(uv);
+    st.rgb *= 1.0 - sh * caster * uShadow * 0.28;
 
-    if (uPeel > 0.001) {
-      // shadow the flap casts onto the front, just past its lip
-      float lipT = t0 + curlW;
-      float sh = (1.0 - smoothstep(0.0, 0.05, t - lipT)) *
-                 smoothstep(-0.008, 0.008, t - lipT);
-      // only shade where the flap lip actually hangs above this column
-      float caster = shapeMask(uv - (t - t0 + curlW) * d);
-      col.rgb *= 1.0 - sh * caster * uShadow * 0.28;
-
+    if (uPeel > 0.001 && t < lipT) {
       // the curled flap folds BACK OVER the front: screen points just past
       // the fold show the foil backside of the peeled-away region
-      if (t < lipT) {
-        vec2 uvBack = uv + 2.0 * (t0 - t) * d; // mirrored source point
-        float shape = shapeMask(uvBack);
-        if (shape > 0.004) {
-          float s = (t - t0) / curlW;          // 0 at fold .. 1 at lip
-          // cylinder shading: bright crest, gently darker at fold and lip
-          float shade = 0.8 + 0.25 * sin(s * 3.14159);
-          vec3 silver = vec3(0.95, 0.96, 0.97);
-          vec3 rb = rainbow(uvBack * 0.8 + vec2(s * 0.5), 0.2);
-          vec3 backCol = mix(silver, rb, uHolo * 0.3) * shade;
-          // fine streaks running along the curl axis
-          float streak = 0.5 + 0.5 * sin(dot(uvBack, vec2(-d.y, d.x)) * 60.0);
-          backCol *= 0.92 + streak * 0.08;
-          // contact shadow under the flap right at the fold
-          float under = 1.0 - smoothstep(0.0, 0.2, s);
-          vec3 frontShadowed = col.rgb * (1.0 - under * uShadow * 0.22);
-          // crisp lip edge
-          float lip = smoothstep(1.0, 0.965, s);
-          float flapA = shape * lip;
-          col.rgb = mix(frontShadowed, clamp(backCol, 0.0, 1.0), flapA);
-          col.a = max(col.a, flapA);
-        }
+      vec2 uvBack = uv + 2.0 * (t0 - t) * d; // mirrored source point
+      float shape = shapeMask(uvBack);
+      if (shape > 0.004) {
+        float s = (t - t0) / curlW;          // 0 at fold .. 1 at lip
+        float shade = 0.8 + 0.25 * sin(s * 3.14159);
+        vec3 silver = vec3(0.95, 0.96, 0.97);
+        vec3 rb = rainbow(uvBack * 0.8 + vec2(s * 0.5), 0.2);
+        vec3 backCol = mix(silver, rb, uHolo * 0.3) * shade;
+        float streak = 0.5 + 0.5 * sin(dot(uvBack, vec2(-d.y, d.x)) * 60.0);
+        backCol *= 0.92 + streak * 0.08;
+        float under = 1.0 - smoothstep(0.0, 0.2, s);
+        vec3 frontShadowed = st.rgb * (1.0 - under * uShadow * 0.22);
+        float lip = smoothstep(1.0, 0.965, s);
+        float flapA = shape * lip;
+        st.rgb = mix(frontShadowed, clamp(backCol, 0.0, 1.0), flapA);
+        st.a = max(st.a, flapA);
       }
     }
   }
-  // t < t0: peeled away, nothing left
+
+  // ---- kiss-cut backing sheet behind the sticker ----
+  vec4 col = st;
+  if (uBack > 0.5) {
+    float back = backMask(uv);
+    if (back > 0.003) {
+      // the backing sheet is the same holographic foil, slightly muted
+      vec3 foil = foilColor(uv, 0.65);
+      // soft contact shadow of the sticker onto the backing
+      float halo = clamp(shapeBlur(uv) * 1.6, 0.0, 1.0) * (1.0 - shapeMask(uv));
+      foil *= 1.0 - halo * 0.18;
+      // flap lip shadow also falls on the backing
+      foil *= 1.0 - sh * caster * uShadow * 0.28;
+      col = vec4(mix(foil, st.rgb, st.a), max(back, st.a));
+    }
+  }
 
   // premultiply for correct compositing
   col.rgb *= col.a;
@@ -241,6 +277,8 @@ export class HoloRenderer {
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
   private texture: WebGLTexture | null = null
   private shapeTexture: WebGLTexture | null = null
+  private backTexture: WebGLTexture | null = null
+  private backScale: [number, number] = [1, 1]
   private hasTexture = false
   private source: ImageBitmap | null = null
   private shapeKey = ""
@@ -262,7 +300,8 @@ export class HoloRenderer {
     for (const name of [
       "uTex", "uShapeTex", "uShapeScale", "uHasTex", "uImgScale", "uScale",
       "uBorder", "uHolo", "uBands", "uHue", "uGrain", "uPattern", "uLight",
-      "uPeelAngle", "uPeel", "uCurl", "uShadow", "uPx", "uCut",
+      "uPeelAngle", "uPeel", "uCurl", "uShadow", "uPx",
+      "uBackTex", "uBackScale", "uBack",
     ]) {
       this.uniforms[name] = gl.getUniformLocation(this.program, name)
     }
@@ -315,7 +354,7 @@ export class HoloRenderer {
   private updateShapeTexture(s: StickerSettings, imgAspect: number) {
     const src = this.source
     if (!src) return
-    const key = `${s.border}|${s.cutSmooth}|${s.size}|${src.width}x${src.height}`
+    const key = `${s.border}|${s.size}|${s.kissCut}|${s.backingMargin}|${src.width}x${src.height}`
     if (key === this.shapeKey) return
     this.shapeKey = key
 
@@ -325,27 +364,42 @@ export class HoloRenderer {
     const w = Math.round(src.width * scale)
     const h = Math.round(src.height * scale)
     const borderPx = (s.border / (s.size * sx)) * w
-    const blurPx = Math.max(borderPx * (0.6 + 1.9 * s.cutSmooth), 1)
-    const pad = Math.ceil(blurPx * 2 + 4)
+    const blurPx = Math.max(borderPx * 1.5, 1)
 
-    const canvas = document.createElement("canvas")
-    canvas.width = w + 2 * pad
-    canvas.height = h + 2 * pad
-    const ctx = canvas.getContext("2d")!
-    ctx.filter = `blur(${blurPx}px)`
-    ctx.drawImage(src, pad, pad, w, h)
-    this.shapeScale = [w / canvas.width, h / canvas.height]
+    const blurToTexture = (
+      blur: number,
+      unit: number,
+      tex: WebGLTexture,
+    ): [number, number] => {
+      const pad = Math.ceil(blur * 2 + 4)
+      const canvas = document.createElement("canvas")
+      canvas.width = w + 2 * pad
+      canvas.height = h + 2 * pad
+      const ctx = canvas.getContext("2d")!
+      ctx.filter = `blur(${blur}px)`
+      ctx.drawImage(src, pad, pad, w, h)
+      const gl = this.gl
+      gl.activeTexture(gl.TEXTURE0 + unit)
+      gl.bindTexture(gl.TEXTURE_2D, tex)
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      return [w / canvas.width, h / canvas.height]
+    }
 
     const gl = this.gl
     if (!this.shapeTexture) this.shapeTexture = gl.createTexture()
-    gl.activeTexture(gl.TEXTURE1)
-    gl.bindTexture(gl.TEXTURE_2D, this.shapeTexture)
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    this.shapeScale = blurToTexture(blurPx, 1, this.shapeTexture!)
+
+    if (s.kissCut) {
+      const marginPx = (s.backingMargin / (s.size * sx)) * w
+      const backBlur = Math.max(marginPx * 1.5, 2)
+      if (!this.backTexture) this.backTexture = gl.createTexture()
+      this.backScale = blurToTexture(backBlur, 2, this.backTexture!)
+    }
     gl.activeTexture(gl.TEXTURE0)
   }
 
@@ -365,6 +419,9 @@ export class HoloRenderer {
     gl.uniform1i(u.uTex as WebGLUniformLocation, 0)
     gl.uniform1i(u.uShapeTex as WebGLUniformLocation, 1)
     gl.uniform2f(u.uShapeScale!, this.shapeScale[0], this.shapeScale[1])
+    gl.uniform1i(u.uBackTex as WebGLUniformLocation, 2)
+    gl.uniform2f(u.uBackScale!, this.backScale[0], this.backScale[1])
+    gl.uniform1f(u.uBack!, s.kissCut ? 1 : 0)
     gl.uniform1f(u.uHasTex!, this.hasTexture ? 1 : 0)
     // aspect fit inside the square canvas
     const sx = imgAspect >= 1 ? 1 : imgAspect
@@ -372,10 +429,6 @@ export class HoloRenderer {
     gl.uniform2f(u.uImgScale!, sx, sy)
     gl.uniform1f(u.uScale!, s.size)
     gl.uniform1f(u.uBorder!, s.border)
-    gl.uniform1f(
-      u.uCut!,
-      s.border >= 0.0005 ? 0.42 - 0.34 * s.cutSmooth : 0.5,
-    )
     gl.uniform1f(u.uHolo!, s.holoIntensity)
     gl.uniform1f(u.uBands!, s.bands)
     gl.uniform1f(u.uHue!, s.hueShift)
