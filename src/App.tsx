@@ -1,4 +1,13 @@
 import { useCallback, useRef, useState } from "react"
+import { Download } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Sidebar } from "@/components/Sidebar"
 import { StickerCanvas } from "@/components/StickerCanvas"
 import { loadImageFile } from "@/lib/load-image"
@@ -47,6 +56,12 @@ export default function App() {
     }
   }, [settings, imgAspect, imageName])
 
+  const handleRemoveImage = useCallback(() => {
+    setImage(null)
+    setImgAspect(1)
+    setImageName(null)
+  }, [])
+
   const handleExportSettings = useCallback(() => {
     const blob = new Blob([JSON.stringify(settings, null, 2)], {
       type: "application/json",
@@ -68,10 +83,9 @@ export default function App() {
       <Sidebar
         settings={settings}
         imageName={imageName}
-        exporting={exporting}
         onChange={patch}
         onUpload={handleUpload}
-        onExport={handleExport}
+        onRemove={handleRemoveImage}
         onExportSettings={handleExportSettings}
         onReset={() => setSettings(defaultSettings)}
       />
@@ -92,6 +106,25 @@ export default function App() {
           if (f) void handleUpload(f)
         }}
       >
+        <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+          <Select
+            value={String(settings.exportSize)}
+            onValueChange={(v) => patch({ exportSize: Number(v) })}
+          >
+            <SelectTrigger aria-label="Export size">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1024">1024 × 1024</SelectItem>
+              <SelectItem value="2048">2048 × 2048</SelectItem>
+              <SelectItem value="4096">4096 × 4096</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button disabled={!image || exporting} onClick={handleExport}>
+            <Download aria-hidden />
+            {exporting ? "Exporting…" : "Export PNG"}
+          </Button>
+        </div>
         <div
           aria-hidden
           className={

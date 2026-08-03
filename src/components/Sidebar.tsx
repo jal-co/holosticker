@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { Download, ImagePlus, RotateCcw, Settings2 } from "lucide-react"
+import { FileDown, ImagePlus, RotateCcw, X } from "lucide-react"
 import { HoloLogo } from "@/components/HoloLogo"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -24,10 +24,9 @@ import type {
 interface Props {
   settings: StickerSettings
   imageName: string | null
-  exporting: boolean
   onChange: (patch: Partial<StickerSettings>) => void
   onUpload: (file: File) => void
-  onExport: () => void
+  onRemove: () => void
   onExportSettings: () => void
   onReset: () => void
 }
@@ -127,10 +126,9 @@ function Dropzone({
 export function Sidebar({
   settings,
   imageName,
-  exporting,
   onChange,
   onUpload,
-  onExport,
+  onRemove,
   onExportSettings,
   onReset,
 }: Props) {
@@ -166,16 +164,21 @@ export function Sidebar({
               onOpen={() => fileRef.current?.click()}
             />
             {imageName && (
-              <div className="flex items-center gap-2 rounded-lg bg-accent/60 px-2.5 py-1.5">
+              <div className="flex items-center gap-1.5 rounded-lg bg-accent/60 py-0.5 pl-2.5 pr-0.5">
                 <span
                   className="min-w-0 flex-1 truncate text-xs text-foreground"
                   title={imageName}
                 >
                   {imageName}
                 </span>
-                <span className="shrink-0 text-[11px] text-muted-foreground">
-                  loaded
-                </span>
+                <button
+                  type="button"
+                  aria-label="Remove artwork"
+                  onClick={onRemove}
+                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-[color,background-color] hover:bg-accent hover:text-foreground"
+                >
+                  <X className="size-3.5" aria-hidden />
+                </button>
               </div>
             )}
             <SliderRow
@@ -384,7 +387,7 @@ export function Sidebar({
           {/* Scene & export */}
           <section className="space-y-3">
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Scene &amp; export
+              Scene
             </h2>
             <div className="space-y-2">
               <Label className="text-xs">Background</Label>
@@ -406,39 +409,16 @@ export function Sidebar({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label className="text-xs">Export size</Label>
-              <Select
-                value={String(settings.exportSize)}
-                onValueChange={(v) => onChange({ exportSize: Number(v) })}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1024">1024 × 1024</SelectItem>
-                  <SelectItem value="2048">2048 × 2048</SelectItem>
-                  <SelectItem value="4096">4096 × 4096</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button
-              className="w-full"
-              disabled={!imageName || exporting}
-              onClick={onExport}
-            >
-              <Download aria-hidden />
-              {exporting ? "Exporting…" : "Export PNG"}
-            </Button>
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 className="flex-1"
                 onClick={onExportSettings}
+                title="Download the current sliders as a JSON file"
               >
-                <Settings2 aria-hidden />
-                Settings
+                <FileDown aria-hidden />
+                Save settings
               </Button>
               <Button
                 variant="ghost"
