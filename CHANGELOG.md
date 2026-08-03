@@ -1,5 +1,12 @@
 # holosticker
 
+## 1.1.1
+
+### Patch Changes
+
+- 23b3d9d: CI now verifies a changeset accompanies every pull request, and main is branch-protected behind the Build and Changeset checks
+- 8882f4c: Speed control for GIF export: 0.5×–2× slider with live preview
+
 ## 1.1.0
 
 ### Minor Changes
