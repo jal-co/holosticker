@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Slider } from "@/components/ui/slider"
-import { Switch } from "@/components/ui/switch"
 import type {
   HoloPattern,
   PeelDirection,
@@ -145,26 +144,6 @@ export function Sidebar({
               format={(v) => v.toFixed(3)}
               onChange={(v) => onChange({ border: v })}
             />
-            <div className="flex items-center justify-between">
-              <Label htmlFor="kisscut" className="text-xs">
-                Kiss-cut backing
-              </Label>
-              <Switch
-                id="kisscut"
-                checked={settings.kissCut}
-                onCheckedChange={(v) => onChange({ kissCut: v })}
-              />
-            </div>
-            {settings.kissCut && (
-              <SliderRow
-                label="Backing margin"
-                value={settings.backingMargin}
-                min={0.02}
-                max={0.15}
-                step={0.005}
-                onChange={(v) => onChange({ backingMargin: v })}
-              />
-            )}
           </section>
 
           <Separator />

@@ -14,10 +14,6 @@ export interface StickerSettings {
   size: number
   /** Die-cut white/foil border width, 0–0.08 (uv units) */
   border: number
-  /** Kiss cut: show the backing sheet behind the sticker */
-  kissCut: boolean
-  /** Backing sheet margin beyond the sticker, 0.02–0.15 */
-  backingMargin: number
   /** Holographic rainbow intensity, 0–1 */
   holoIntensity: number
   /** Rainbow band frequency, 1–20 */
@@ -47,8 +43,6 @@ export interface StickerSettings {
 export const defaultSettings: StickerSettings = {
   size: 0.78,
   border: 0.028,
-  kissCut: true,
-  backingMargin: 0.06,
   holoIntensity: 0.85,
   bands: 9,
   hueShift: 0,

@@ -17,11 +17,10 @@ in vec2 vUv;
 out vec4 outColor;
 
 uniform sampler2D uTex;
-uniform sampler2D uShapeTex;
-uniform vec2 uShapeScale; // art extent inside the padded shape texture
-uniform sampler2D uBackTex;
-uniform vec2 uBackScale;
-uniform float uBack;      // kiss-cut backing on/off
+uniform sampler2D uDistTex; // distance-to-artwork field (art px / 160)
+uniform vec2 uDistScale;    // art extent inside the padded distance texture
+uniform float uBorderPx;    // border width in distance-field pixels
+uniform float uAaPx;        // one screen pixel in distance-field pixels
 uniform float uHasTex;
 uniform vec2 uImgScale;   // aspect-fit scale of image inside sticker area
 uniform float uScale;     // sticker size
@@ -95,39 +94,15 @@ float artAlpha(vec2 uv) {
   return texture(uTex, t).a;
 }
 
-// dilated alpha = die-cut sticker shape (art + border)
+// die-cut sticker shape (art + border) from an exact euclidean distance
+// field: dilation by a disk, so square corners become perfect round arcs
 float shapeMask(vec2 uv) {
-  float m = artAlpha(uv);
-  if (uBorder >= 0.0005) {
-    const int DIRS = 16;
-    for (int i = 0; i < DIRS; i++) {
-      float a = 6.2831853 * float(i) / float(DIRS);
-      vec2 dd = vec2(cos(a), sin(a));
-      m = max(m, artAlpha(uv + dd * uBorder));
-      m = max(m, artAlpha(uv + dd * uBorder * 0.55));
-    }
-  }
-  // crisp edge, antialiased ~one screen pixel wide
-  float w = clamp(fwidth(m) * 0.75, uPx, 0.25);
-  return smoothstep(0.5 - w, 0.5 + w, m);
-}
-
-// blurred shape value, for soft contact shadow of the sticker on the backing
-float shapeBlur(vec2 uv) {
   vec2 t = stickerUv(uv);
-  vec2 st = (t - 0.5) * uShapeScale + 0.5;
+  vec2 st = (t - 0.5) * uDistScale + 0.5;
   if (st.x < 0.0 || st.x > 1.0 || st.y < 0.0 || st.y > 1.0) return 0.0;
-  return texture(uShapeTex, st).a;
-}
-
-// backing sheet mask: a wider, rounder contour around the sticker
-float backMask(vec2 uv) {
-  vec2 t = stickerUv(uv);
-  vec2 st = (t - 0.5) * uBackScale + 0.5;
-  if (st.x < 0.0 || st.x > 1.0 || st.y < 0.0 || st.y > 1.0) return 0.0;
-  float m = texture(uBackTex, st).a;
-  float w = clamp(fwidth(m) * 0.75, 0.004, 0.25);
-  return smoothstep(0.11 - w, 0.11 + w, m);
+  float dpx = texture(uDistTex, st).r * 160.0;
+  float aa = max(uAaPx * 0.75, 0.5);
+  return smoothstep(uBorderPx + aa, uBorderPx - aa, dpx);
 }
 
 // ---------- holographic foil ----------
@@ -244,23 +219,8 @@ void main() {
     }
   }
 
-  // ---- kiss-cut backing sheet behind the sticker ----
-  vec4 col = st;
-  if (uBack > 0.5) {
-    float back = backMask(uv);
-    if (back > 0.003) {
-      // the backing sheet is the same holographic foil, slightly muted
-      vec3 foil = foilColor(uv, 0.65);
-      // soft contact shadow of the sticker onto the backing
-      float halo = clamp(shapeBlur(uv) * 1.6, 0.0, 1.0) * (1.0 - shapeMask(uv));
-      foil *= 1.0 - halo * 0.18;
-      // flap lip shadow also falls on the backing
-      foil *= 1.0 - sh * caster * uShadow * 0.28;
-      col = vec4(mix(foil, st.rgb, st.a), max(back, st.a));
-    }
-  }
-
   // premultiply for correct compositing
+  vec4 col = st;
   col.rgb *= col.a;
   outColor = col;
 }`
@@ -276,13 +236,10 @@ export class HoloRenderer {
   private program: WebGLProgram
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
   private texture: WebGLTexture | null = null
-  private shapeTexture: WebGLTexture | null = null
-  private backTexture: WebGLTexture | null = null
-  private backScale: [number, number] = [1, 1]
+  private distTexture: WebGLTexture | null = null
   private hasTexture = false
-  private source: ImageBitmap | null = null
-  private shapeKey = ""
-  private shapeScale: [number, number] = [1, 1]
+  private distScale: [number, number] = [1, 1]
+  private distW = 1
   canvas: HTMLCanvasElement
 
   constructor(canvas: HTMLCanvasElement) {
@@ -301,7 +258,7 @@ export class HoloRenderer {
       "uTex", "uShapeTex", "uShapeScale", "uHasTex", "uImgScale", "uScale",
       "uBorder", "uHolo", "uBands", "uHue", "uGrain", "uPattern", "uLight",
       "uPeelAngle", "uPeel", "uCurl", "uShadow", "uPx",
-      "uBackTex", "uBackScale", "uBack",
+      "uDistTex", "uDistScale", "uBorderPx", "uAaPx",
     ]) {
       this.uniforms[name] = gl.getUniformLocation(this.program, name)
     }
@@ -332,8 +289,6 @@ export class HoloRenderer {
 
   setImage(source: ImageBitmap | null) {
     const gl = this.gl
-    this.source = source
-    this.shapeKey = ""
     if (!source) {
       this.hasTexture = false
       return
@@ -348,59 +303,92 @@ export class HoloRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
     this.hasTexture = true
+    this.updateDistanceField(source)
   }
 
-  /** Gaussian-blur the artwork alpha into a padded shape texture. */
-  private updateShapeTexture(s: StickerSettings, imgAspect: number) {
-    const src = this.source
-    if (!src) return
-    const key = `${s.border}|${s.size}|${s.kissCut}|${s.backingMargin}|${src.width}x${src.height}`
-    if (key === this.shapeKey) return
-    this.shapeKey = key
-
-    // border width in source pixels: art spans uScale*sx of canvas uv
-    const sx = imgAspect >= 1 ? 1 : imgAspect
+  /** Exact euclidean distance transform of the artwork alpha (Felzenszwalb). */
+  private updateDistanceField(src: ImageBitmap) {
+    const MAXD = 160 // distance range in field pixels
     const scale = Math.min(1024 / Math.max(src.width, src.height), 1)
     const w = Math.round(src.width * scale)
     const h = Math.round(src.height * scale)
-    const borderPx = (s.border / (s.size * sx)) * w
-    const blurPx = Math.max(borderPx * 1.5, 1)
+    const pad = MAXD
+    const W = w + 2 * pad
+    const H = h + 2 * pad
 
-    const blurToTexture = (
-      blur: number,
-      unit: number,
-      tex: WebGLTexture,
-    ): [number, number] => {
-      const pad = Math.ceil(blur * 2 + 4)
-      const canvas = document.createElement("canvas")
-      canvas.width = w + 2 * pad
-      canvas.height = h + 2 * pad
-      const ctx = canvas.getContext("2d")!
-      ctx.filter = `blur(${blur}px)`
-      ctx.drawImage(src, pad, pad, w, h)
-      const gl = this.gl
-      gl.activeTexture(gl.TEXTURE0 + unit)
-      gl.bindTexture(gl.TEXTURE_2D, tex)
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      return [w / canvas.width, h / canvas.height]
+    const canvas = document.createElement("canvas")
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!
+    ctx.drawImage(src, 0, 0, w, h)
+    const alpha = ctx.getImageData(0, 0, w, h).data
+
+    const INF = 1e20
+    const dsq = new Float64Array(W * H).fill(INF)
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (alpha[(y * w + x) * 4 + 3] > 127) dsq[(y + pad) * W + x + pad] = 0
+      }
+    }
+
+    const n = Math.max(W, H)
+    const f = new Float64Array(n)
+    const dOut = new Float64Array(n)
+    const v = new Int32Array(n)
+    const z = new Float64Array(n + 1)
+    const dt1 = (len: number) => {
+      let k = 0
+      v[0] = 0
+      z[0] = -INF
+      z[1] = INF
+      for (let q = 1; q < len; q++) {
+        let s =
+          (f[q] + q * q - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k])
+        while (s <= z[k]) {
+          k--
+          s = (f[q] + q * q - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k])
+        }
+        k++
+        v[k] = q
+        z[k] = s
+        z[k + 1] = INF
+      }
+      k = 0
+      for (let q = 0; q < len; q++) {
+        while (z[k + 1] < q) k++
+        const dq = q - v[k]
+        dOut[q] = dq * dq + f[v[k]]
+      }
+    }
+    for (let x = 0; x < W; x++) {
+      for (let y = 0; y < H; y++) f[y] = dsq[y * W + x]
+      dt1(H)
+      for (let y = 0; y < H; y++) dsq[y * W + x] = dOut[y]
+    }
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) f[x] = dsq[y * W + x]
+      dt1(W)
+      for (let x = 0; x < W; x++) dsq[y * W + x] = dOut[x]
+    }
+
+    const data = new Uint8Array(W * H)
+    for (let i = 0; i < W * H; i++) {
+      data[i] = Math.min(255, Math.round((Math.sqrt(dsq[i]) / MAXD) * 255))
     }
 
     const gl = this.gl
-    if (!this.shapeTexture) this.shapeTexture = gl.createTexture()
-    this.shapeScale = blurToTexture(blurPx, 1, this.shapeTexture!)
-
-    if (s.kissCut) {
-      const marginPx = (s.backingMargin / (s.size * sx)) * w
-      const backBlur = Math.max(marginPx * 1.5, 2)
-      if (!this.backTexture) this.backTexture = gl.createTexture()
-      this.backScale = blurToTexture(backBlur, 2, this.backTexture!)
-    }
+    if (!this.distTexture) this.distTexture = gl.createTexture()
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_2D, this.distTexture)
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, W, H, 0, gl.RED, gl.UNSIGNED_BYTE, data)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
     gl.activeTexture(gl.TEXTURE0)
+    this.distScale = [w / W, h / H]
+    this.distW = w
   }
 
   render(input: Omit<RenderInput, "image">) {
@@ -413,15 +401,14 @@ export class HoloRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT)
     gl.useProgram(this.program)
 
-    this.updateShapeTexture(s, imgAspect)
-
     const u = this.uniforms
     gl.uniform1i(u.uTex as WebGLUniformLocation, 0)
-    gl.uniform1i(u.uShapeTex as WebGLUniformLocation, 1)
-    gl.uniform2f(u.uShapeScale!, this.shapeScale[0], this.shapeScale[1])
-    gl.uniform1i(u.uBackTex as WebGLUniformLocation, 2)
-    gl.uniform2f(u.uBackScale!, this.backScale[0], this.backScale[1])
-    gl.uniform1f(u.uBack!, s.kissCut ? 1 : 0)
+    gl.uniform1i(u.uDistTex as WebGLUniformLocation, 1)
+    gl.uniform2f(u.uDistScale!, this.distScale[0], this.distScale[1])
+    const sxA = imgAspect >= 1 ? 1 : imgAspect
+    const pxPerUv = this.distW / (s.size * sxA)
+    gl.uniform1f(u.uBorderPx!, s.border * pxPerUv)
+    gl.uniform1f(u.uAaPx!, (1 / w) * pxPerUv)
     gl.uniform1f(u.uHasTex!, this.hasTexture ? 1 : 0)
     // aspect fit inside the square canvas
     const sx = imgAspect >= 1 ? 1 : imgAspect
