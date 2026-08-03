@@ -13,10 +13,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
 import type {
   HoloOverlay,
   HoloPattern,
+  LayerMaterial,
   PeelDirection,
   StickerSettings,
 } from "@/lib/settings"
@@ -320,6 +322,64 @@ export function Sidebar({
                 onChange({ light: { ...settings.light, y: v } })
               }
             />
+          </section>
+
+          <Separator />
+
+          {/* 3D color layers */}
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Layers
+              </h2>
+              <Switch
+                checked={settings.layersOn}
+                onCheckedChange={(v) => onChange({ layersOn: v })}
+                aria-label="Separate colors into 3D layers"
+              />
+            </div>
+            {settings.layersOn && (
+              <>
+                <SliderRow
+                  label="Thickness"
+                  value={settings.layerDepth}
+                  min={0.002}
+                  max={0.03}
+                  step={0.001}
+                  format={(v) => v.toFixed(3)}
+                  onChange={(v) => onChange({ layerDepth: v })}
+                />
+                <div className="space-y-2">
+                  {["Backing", "Kiss-cut", "Artwork"].map((name, i) => (
+                    <div key={name} className="flex items-center gap-2">
+                      <Label className="w-16 shrink-0 text-xs text-muted-foreground">
+                        {name}
+                      </Label>
+                      <Select
+                        value={settings.layerMaterials[i] ?? "auto"}
+                        onValueChange={(v) => {
+                          const next = [...settings.layerMaterials]
+                          next[i] = v as LayerMaterial
+                          onChange({ layerMaterials: next })
+                        }}
+                      >
+                        <SelectTrigger className="h-7 w-full text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Holo foil (auto)</SelectItem>
+                          <SelectItem value="glitter">Glitter</SelectItem>
+                          <SelectItem value="chrome">Chrome</SelectItem>
+                          <SelectItem value="matte">Matte</SelectItem>
+                          <SelectItem value="prism">Prism facets</SelectItem>
+                          <SelectItem value="satin">Satin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </section>
 
           <Separator />
