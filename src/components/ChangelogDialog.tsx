@@ -30,7 +30,7 @@ export function ChangelogDialog({ open, onOpenChange }: Props) {
               </Button>
             </Dialog.Close>
           </div>
-          <ScrollArea className="max-h-[55dvh] rounded-lg border">
+          <ScrollArea className="overflow-hidden rounded-lg border [&>[data-slot=scroll-area-viewport]]:max-h-[55dvh]">
             <div className="space-y-5 p-3">
               {changelog.map((entry, i) => (
                 <section key={entry.version}>

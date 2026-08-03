@@ -171,6 +171,8 @@ uniform float uOverlay;
 uniform float uInk;
 uniform float uSeed; // per-layer texture variation
 uniform float uBackStyle; // 0 = glossy foil liner, 1 = the layer's own map
+uniform sampler2D uHeight; // ink coverage, mipmapped, drives the emboss
+uniform float uRelief;
 uniform float uPeelOn;
 uniform vec2 uLight;
 
@@ -196,6 +198,25 @@ vec2 equirectUv(vec3 d) {
   float theta = acos(clamp(d.y, -1.0, 1.0));
   return vec2((phi + 3.14159265) / 6.2831853, theta / 3.14159265);
 }
+/*
+ * Embossed print relief (concept from konvert.design's sticker tool):
+ * the ink coverage, blurred via mip levels, acts as a height field whose
+ * gradient tilts the normal - the mark sits proud with a real bevel.
+ * Cotangent-frame normal perturbation after Schüler.
+ */
+vec3 perturbNormal(vec3 N, vec3 P, vec2 uv, vec2 dGrad) {
+  vec3 dp1 = dFdx(P);
+  vec3 dp2 = dFdy(P);
+  vec2 duv1 = dFdx(uv);
+  vec2 duv2 = dFdy(uv);
+  vec3 dp2perp = cross(dp2, N);
+  vec3 dp1perp = cross(N, dp1);
+  vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+  vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+  float invmax = inversesqrt(max(dot(T, T), dot(B, B)) + 1e-12);
+  return normalize(N - (T * dGrad.x + B * dGrad.y) * invmax);
+}
+
 vec3 envSample(vec3 R, float rough) {
   return srgb2lin(textureLod(uEnv, equirectUv(R), rough * uMaxMip).rgb);
 }
@@ -310,6 +331,16 @@ void main() {
     return;
   }
 
+  // embossed ink: bevel the normal along the blurred coverage gradient
+  if (uRelief > 0.005) {
+    float e = 2.5 / 1024.0;
+    float hC = textureLod(uHeight, vUv, 1.6).r;
+    float hX = textureLod(uHeight, vUv + vec2(e, 0.0), 1.6).r;
+    float hY = textureLod(uHeight, vUv + vec2(0.0, e), 1.6).r;
+    N = perturbNormal(N, vWorldPos, vUv,
+                      vec2(hX - hC, hY - hC) * (uRelief * 5.0));
+  }
+
   vec3 R = reflect(-V, N);
   float cosT = clamp(dot(N, V), 0.0, 1.0);
   float brightness = lum(base.rgb);
@@ -396,11 +427,21 @@ const LAYER_MATERIAL_PRESETS: Record<
   Record<string, number> | undefined
 > = {
   auto: undefined,
+  gloss: { uGrain: 0.0, uRough: 0.06, uMetal: 0.3, uHolo: 0.0 },
   glitter: { uGrain: 1.0, uRough: 0.45, uMetal: 0.8, uHolo: 1.0 },
   chrome: { uGrain: 0.0, uRough: 0.04, uMetal: 1.0, uHolo: 0.25 },
   matte: { uGrain: 0.08, uRough: 0.85, uMetal: 0.05, uHolo: 0.15 },
   prism: { uHolo: 1.0, uBands: 16, uOverlay: 1, uMetal: 0.7, uRough: 0.15 },
   satin: { uRough: 0.35, uMetal: 0.5, uHolo: 0.5, uGrain: 0.15 },
+}
+
+/** Metal/roughness per finish preset. */
+const FINISH_PARAMS: Record<string, { metal: number; rough: number }> = {
+  holo: { metal: 0.6, rough: 0.18 },
+  glitter: { metal: 0.65, rough: 0.3 },
+  gloss: { metal: 0.3, rough: 0.06 },
+  matte: { metal: 0.05, rough: 0.8 },
+  chrome: { metal: 1.0, rough: 0.045 },
 }
 
 export type GifAnim = "sweep" | "peel"
@@ -479,6 +520,8 @@ export class HoloRenderer {
         uOverlay: { value: 0 },
         uInk: { value: 1 },
         uSeed: { value: 0 },
+        uHeight: { value: null },
+        uRelief: { value: 0 },
         uBackStyle: { value: 0 },
         uLift: { value: 0 },
         uPeelOn: { value: 0 },
@@ -602,6 +645,39 @@ export class HoloRenderer {
     this.material.uniforms.uMap.value = tex
     this.mapAspect = ow / oh
 
+    // height map for the relief: the vinyl plateaus over the artwork and
+    // ramps down across the border, reaching zero at the kiss-cut edge
+    const hout = new Uint8ClampedArray(new ArrayBuffer(ow * oh * 4))
+    // the vinyl plateau covers artwork AND border, stepping down with a
+    // narrow rounded shoulder just inside the kiss-cut edge
+    const shoulder = Math.min(9, borderPx * 0.3 + 3)
+    for (let y = 0; y < oh; y++) {
+      for (let x = 0; x < ow; x++) {
+        const ax = x - off
+        const ay = y - off
+        const d =
+          ax >= -pad && ax < w + pad && ay >= -pad && ay < h + pad
+            ? dist[(ay + pad) * W + ax + pad]
+            : MAXD
+        // 1 across the sticker body, rolling to 0 at the cut line
+        const t = Math.max(0, Math.min(1, (borderPx - d) / shoulder))
+        const o = (y * ow + x) * 4
+        hout[o] = Math.round(255 * t * t * (3 - 2 * t))
+        hout[o + 3] = 255
+      }
+    }
+    const hc = document.createElement("canvas")
+    hc.width = ow
+    hc.height = oh
+    hc.getContext("2d")!.putImageData(new ImageData(hout, ow, oh), 0, 0)
+    const htex = new THREE.CanvasTexture(hc)
+    htex.colorSpace = THREE.NoColorSpace
+    htex.generateMipmaps = true
+    htex.minFilter = THREE.LinearMipmapLinearFilter
+    const oldH = this.material.uniforms.uHeight.value as THREE.Texture | null
+    oldH?.dispose()
+    this.material.uniforms.uHeight.value = htex
+
     // ---- exploded production layers: backing / kiss-cut blank / art ----
     for (const m of this.layerMeshes) {
       this.mesh.remove(m)
@@ -680,6 +756,9 @@ export class HoloRenderer {
           },
         })
         const lmesh = new THREE.Mesh(this.geometry, lmat)
+        // remember the preset's holo level so render() can scale it by
+        // the global intensity (a matte global must stay matte)
+        lmesh.userData.presetHolo = preset.uHolo
         lmesh.renderOrder = li + 1
         this.mesh.add(lmesh)
         this.layerMeshes.push(lmesh)
@@ -788,6 +867,13 @@ export class HoloRenderer {
       const u = (this.layerMeshes[i].material as THREE.ShaderMaterial)
         .uniforms
       u.uLift.value = 0.004 + i * s.layerDepth
+      const presetHolo = this.layerMeshes[i].userData.presetHolo as
+        | number
+        | undefined
+      if (presetHolo !== undefined) {
+        u.uHolo.value =
+          presetHolo * Math.min(1, s.holoIntensity / 0.85)
+      }
     }
 
     // fly-off: continue the peel motion out of frame, toward the peel
@@ -821,6 +907,10 @@ export class HoloRenderer {
             : 3
     u.uPeelOn.value = s.peelAmount > 0.001 ? 1 : 0
     u.uInk.value = s.ink
+    u.uRelief.value = s.relief
+    const fin = FINISH_PARAMS[s.finish] ?? FINISH_PARAMS.holo
+    u.uMetal.value = fin.metal
+    u.uRough.value = fin.rough
     ;(u.uLight.value as THREE.Vector2).set(s.light.x, s.light.y)
 
     // blob shadow follows sticker size, offset away from the light
@@ -870,6 +960,7 @@ export class HoloRenderer {
     return blob
   }
 
+  /* react-export:strip-start (needs gifenc / GLTFExporter deps) */
   /**
    * Export an animated GIF: a seamless loop where the sticker tilts in a
    * circle so the holofoil bands sweep, like turning it in your hand.
@@ -994,4 +1085,5 @@ export class HoloRenderer {
     mat.dispose()
     return new Blob([result as ArrayBuffer], { type: "model/gltf-binary" })
   }
+  /* react-export:strip-end */
 }

@@ -1,8 +1,10 @@
 export type HoloPattern = "linear" | "radial" | "patches"
+export type Finish = "holo" | "gloss" | "matte" | "chrome" | "glitter"
 export type HoloOverlay = "none" | "triangles" | "squares" | "stripes"
 export type LayerMaterial =
   | "auto"
   | "glitter"
+  | "gloss"
   | "chrome"
   | "matte"
   | "prism"
@@ -18,6 +20,8 @@ export type PeelDirection =
   | "left"
 
 export interface StickerSettings {
+  /** Surface finish preset: drives metalness/roughness in the shader */
+  finish: Finish
   /** Sticker scale within the canvas, 0.3–1 */
   size: number
   /** Die-cut white/foil border width, 0–0.08 (uv units) */
@@ -28,6 +32,8 @@ export interface StickerSettings {
   overlay: HoloOverlay
   /** Ink visibility: 0 = foil only, 1 = as uploaded, up to 2 = densified */
   ink: number
+  /** Embossed print relief: the ink sits proud with a shaded bevel, 0–1 */
+  relief: number
   /** Exploded view: backing paper, kiss-cut foil blank, and artwork */
   layersOn: boolean
   /** Separation between the exploded layers, 0–0.3 */
@@ -61,21 +67,23 @@ export interface StickerSettings {
 }
 
 export const defaultSettings: StickerSettings = {
-  size: 0.83,
-  border: 0.028,
-  cutTolerance: 0.04,
-  overlay: "triangles",
+  finish: "holo",
+  size: 0.74,
+  border: 0.019,
+  cutTolerance: 0.03,
+  overlay: "none",
   ink: 1,
+  relief: 0.22,
   layersOn: true,
   layerDepth: 0.002,
-  layerMaterials: ["matte", "auto", "matte"],
-  holoIntensity: 0.85,
+  layerMaterials: ["gloss", "auto", "matte"],
+  holoIntensity: 0.6,
   bands: 9,
   hueShift: 0,
-  grain: 0.35,
+  grain: 0,
   pattern: "linear",
   peelDirection: "top-right",
-  peelAmount: 0.39,
+  peelAmount: 0.31,
   curl: 0.09,
   shadow: 0,
   light: { x: 0.65, y: 0.7 },

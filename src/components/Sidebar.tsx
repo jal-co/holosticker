@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { FileDown, FileUp, ImagePlus, RotateCcw, X } from "lucide-react"
+import { FileDown, FileUp, RotateCcw, X } from "lucide-react"
 import { HoloLogo } from "@/components/HoloLogo"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -16,12 +16,26 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
 import type {
+  Finish,
   HoloOverlay,
   HoloPattern,
   LayerMaterial,
   PeelDirection,
   StickerSettings,
 } from "@/lib/settings"
+
+// one-tap finish presets; each patches the finish plus the foil sliders
+const finishPresets: {
+  id: Finish
+  label: string
+  patch: Partial<StickerSettings>
+}[] = [
+  { id: "holo", label: "Holo", patch: { finish: "holo", holoIntensity: 0.85, grain: 0.35 } },
+  { id: "gloss", label: "Glossy", patch: { finish: "gloss", holoIntensity: 0, grain: 0.05 } },
+  { id: "matte", label: "Matte", patch: { finish: "matte", holoIntensity: 0, grain: 0.05 } },
+  { id: "chrome", label: "Chrome", patch: { finish: "chrome", holoIntensity: 0.2, grain: 0 } },
+  { id: "glitter", label: "Glitter", patch: { finish: "glitter", holoIntensity: 1, grain: 1 } },
+]
 
 interface Props {
   settings: StickerSettings
@@ -115,7 +129,15 @@ function Dropzone({
           : "border-input text-muted-foreground hover:border-ring/60 hover:bg-accent/50 hover:text-foreground",
       )}
     >
-      <ImagePlus className="size-5" strokeWidth={1.5} aria-hidden />
+      <svg
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className="size-5"
+        aria-hidden="true"
+      >
+        <path d="M18.5 15C18.9142 15 19.25 15.3358 19.25 15.75V17.75H21.25C21.6642 17.75 22 18.0858 22 18.5C22 18.9142 21.6642 19.25 21.25 19.25H19.25V21.25C19.25 21.6642 18.9142 22 18.5 22C18.0858 22 17.75 21.6642 17.75 21.25V19.25H15.75C15.3358 19.25 15 18.9142 15 18.5C15 18.0858 15.3358 17.75 15.75 17.75H17.75V15.75C17.75 15.3358 18.0858 15 18.5 15Z" />
+        <path fillRule="evenodd" clipRule="evenodd" d="M18.25 3C19.7688 3 21 4.23122 21 5.75V14.1699C20.2645 13.7443 19.4109 13.5 18.5 13.5C16.0512 13.5 14.0149 15.2607 13.585 17.585L9.2373 13.2373C8.55392 12.5541 7.44608 12.5541 6.7627 13.2373L4.5 15.5V18.25C4.5 18.9404 5.05964 19.5 5.75 19.5H13.6006C13.7095 20.0364 13.9052 20.5409 14.1709 21H5.75C4.23122 21 3 19.7688 3 18.25V5.75C3 4.23122 4.23122 3 5.75 3H18.25ZM15 6.5C13.6193 6.5 12.5 7.61929 12.5 9C12.5 10.3807 13.6193 11.5 15 11.5C16.3807 11.5 17.5 10.3807 17.5 9C17.5 7.61929 16.3807 6.5 15 6.5Z" />
+      </svg>
       <span className="text-xs font-medium text-foreground">
         {imageName ? "Replace artwork" : "Upload artwork"}
       </span>
@@ -147,6 +169,38 @@ export function Sidebar({
       <Separator />
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-6 px-4 py-4">
+          {/* Finish presets */}
+          <section className="space-y-3">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Finish
+            </h2>
+            <div
+              role="radiogroup"
+              aria-label="Finish preset"
+              className="grid grid-cols-5 gap-0.5 rounded-lg border bg-muted/50 p-0.5"
+            >
+              {finishPresets.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={settings.finish === p.id}
+                  onClick={() => onChange(p.patch)}
+                  className={cn(
+                    "rounded-md px-0.5 py-1.5 text-[11px] font-medium transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.97]",
+                    settings.finish === p.id
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <Separator />
+
           {/* Artwork */}
           <section className="space-y-3">
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -212,6 +266,15 @@ export function Sidebar({
               step={0.01}
               format={(v) => `${Math.round(v * 100)}%`}
               onChange={(v) => onChange({ ink: v })}
+            />
+            <SliderRow
+              label="Relief"
+              value={settings.relief}
+              min={0}
+              max={1}
+              step={0.01}
+              format={(v) => `${Math.round(v * 100)}%`}
+              onChange={(v) => onChange({ relief: v })}
             />
             <SliderRow
               label="Cut tolerance"
@@ -368,6 +431,7 @@ export function Sidebar({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="auto">Holo foil (auto)</SelectItem>
+                          <SelectItem value="gloss">Glossy</SelectItem>
                           <SelectItem value="glitter">Glitter</SelectItem>
                           <SelectItem value="chrome">Chrome</SelectItem>
                           <SelectItem value="matte">Matte</SelectItem>
