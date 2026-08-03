@@ -144,6 +144,15 @@ export function Sidebar({
               format={(v) => v.toFixed(3)}
               onChange={(v) => onChange({ border: v })}
             />
+            <SliderRow
+              label="Corner smoothing"
+              value={settings.cutSmooth}
+              min={0}
+              max={1}
+              step={0.01}
+              format={(v) => `${Math.round(v * 100)}%`}
+              onChange={(v) => onChange({ cutSmooth: v })}
+            />
           </section>
 
           <Separator />

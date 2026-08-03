@@ -17,10 +17,13 @@ in vec2 vUv;
 out vec4 outColor;
 
 uniform sampler2D uTex;
+uniform sampler2D uShapeTex;
+uniform vec2 uShapeScale; // art extent inside the padded shape texture
 uniform float uHasTex;
 uniform vec2 uImgScale;   // aspect-fit scale of image inside sticker area
 uniform float uScale;     // sticker size
 uniform float uBorder;    // die-cut border width (uv)
+uniform float uCut;       // shape threshold on the blurred alpha
 uniform float uHolo;
 uniform float uBands;
 uniform float uHue;
@@ -90,22 +93,16 @@ float artAlpha(vec2 uv) {
   return texture(uTex, t).a;
 }
 
-// dilated alpha = die-cut sticker shape (art + border)
+// die-cut sticker shape (art + border), from a pre-blurred alpha texture.
+// Thresholding a gaussian-blurred alpha dilates by ~the border width while
+// rounding corners and bridging notches, like a real smooth cut line.
 float shapeMask(vec2 uv) {
-  float m = artAlpha(uv);
-  if (uBorder >= 0.0005) {
-    const int DIRS = 16;
-    for (int i = 0; i < DIRS; i++) {
-      float a = 6.2831853 * float(i) / float(DIRS);
-      vec2 d = vec2(cos(a), sin(a));
-      m = max(m, artAlpha(uv + d * uBorder));
-      m = max(m, artAlpha(uv + d * uBorder * 0.55));
-    }
-  }
-  // sharpen the alpha ramp into a crisp edge, antialiased exactly one
-  // screen pixel wide regardless of source resolution or blur
-  float w = clamp(fwidth(m) * 0.75, uPx, 0.25);
-  return smoothstep(0.5 - w, 0.5 + w, m);
+  vec2 t = stickerUv(uv);
+  vec2 st = (t - 0.5) * uShapeScale + 0.5;
+  if (st.x < 0.0 || st.x > 1.0 || st.y < 0.0 || st.y > 1.0) return 0.0;
+  float m = texture(uShapeTex, st).a;
+  float w = clamp(fwidth(m) * 0.75, 0.004, 0.25);
+  return smoothstep(uCut - w, uCut + w, m);
 }
 
 // ---------- holographic foil ----------
@@ -243,7 +240,11 @@ export class HoloRenderer {
   private program: WebGLProgram
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
   private texture: WebGLTexture | null = null
+  private shapeTexture: WebGLTexture | null = null
   private hasTexture = false
+  private source: ImageBitmap | null = null
+  private shapeKey = ""
+  private shapeScale: [number, number] = [1, 1]
   canvas: HTMLCanvasElement
 
   constructor(canvas: HTMLCanvasElement) {
@@ -259,9 +260,9 @@ export class HoloRenderer {
     this.program = this.buildProgram()
     gl.useProgram(this.program)
     for (const name of [
-      "uTex", "uHasTex", "uImgScale", "uScale", "uBorder", "uHolo", "uBands",
-      "uHue", "uGrain", "uPattern", "uLight", "uPeelAngle", "uPeel", "uCurl",
-      "uShadow", "uPx",
+      "uTex", "uShapeTex", "uShapeScale", "uHasTex", "uImgScale", "uScale",
+      "uBorder", "uHolo", "uBands", "uHue", "uGrain", "uPattern", "uLight",
+      "uPeelAngle", "uPeel", "uCurl", "uShadow", "uPx", "uCut",
     ]) {
       this.uniforms[name] = gl.getUniformLocation(this.program, name)
     }
@@ -290,8 +291,10 @@ export class HoloRenderer {
     return program
   }
 
-  setImage(source: TexImageSource | null) {
+  setImage(source: ImageBitmap | null) {
     const gl = this.gl
+    this.source = source
+    this.shapeKey = ""
     if (!source) {
       this.hasTexture = false
       return
@@ -308,6 +311,44 @@ export class HoloRenderer {
     this.hasTexture = true
   }
 
+  /** Gaussian-blur the artwork alpha into a padded shape texture. */
+  private updateShapeTexture(s: StickerSettings, imgAspect: number) {
+    const src = this.source
+    if (!src) return
+    const key = `${s.border}|${s.cutSmooth}|${s.size}|${src.width}x${src.height}`
+    if (key === this.shapeKey) return
+    this.shapeKey = key
+
+    // border width in source pixels: art spans uScale*sx of canvas uv
+    const sx = imgAspect >= 1 ? 1 : imgAspect
+    const scale = Math.min(1024 / Math.max(src.width, src.height), 1)
+    const w = Math.round(src.width * scale)
+    const h = Math.round(src.height * scale)
+    const borderPx = (s.border / (s.size * sx)) * w
+    const blurPx = Math.max(borderPx * (0.6 + 1.9 * s.cutSmooth), 1)
+    const pad = Math.ceil(blurPx * 2 + 4)
+
+    const canvas = document.createElement("canvas")
+    canvas.width = w + 2 * pad
+    canvas.height = h + 2 * pad
+    const ctx = canvas.getContext("2d")!
+    ctx.filter = `blur(${blurPx}px)`
+    ctx.drawImage(src, pad, pad, w, h)
+    this.shapeScale = [w / canvas.width, h / canvas.height]
+
+    const gl = this.gl
+    if (!this.shapeTexture) this.shapeTexture = gl.createTexture()
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_2D, this.shapeTexture)
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.activeTexture(gl.TEXTURE0)
+  }
+
   render(input: Omit<RenderInput, "image">) {
     const gl = this.gl
     const { settings: s, imgAspect } = input
@@ -318,8 +359,12 @@ export class HoloRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT)
     gl.useProgram(this.program)
 
+    this.updateShapeTexture(s, imgAspect)
+
     const u = this.uniforms
     gl.uniform1i(u.uTex as WebGLUniformLocation, 0)
+    gl.uniform1i(u.uShapeTex as WebGLUniformLocation, 1)
+    gl.uniform2f(u.uShapeScale!, this.shapeScale[0], this.shapeScale[1])
     gl.uniform1f(u.uHasTex!, this.hasTexture ? 1 : 0)
     // aspect fit inside the square canvas
     const sx = imgAspect >= 1 ? 1 : imgAspect
@@ -327,6 +372,10 @@ export class HoloRenderer {
     gl.uniform2f(u.uImgScale!, sx, sy)
     gl.uniform1f(u.uScale!, s.size)
     gl.uniform1f(u.uBorder!, s.border)
+    gl.uniform1f(
+      u.uCut!,
+      s.border >= 0.0005 ? 0.42 - 0.34 * s.cutSmooth : 0.5,
+    )
     gl.uniform1f(u.uHolo!, s.holoIntensity)
     gl.uniform1f(u.uBands!, s.bands)
     gl.uniform1f(u.uHue!, s.hueShift)
