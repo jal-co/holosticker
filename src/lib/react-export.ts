@@ -144,14 +144,13 @@ export default function HoloSticker({
         1 - ((e.clientY - rect.top) / rect.height) * 2,
       )
     }
-    const onLeave = () => renderer.setTilt(0, 0)
+    // no pointerleave reset: the sticker holds its pose and sits still
+    // once the cursor leaves, instead of animating back to center
     canvas.addEventListener("pointermove", onMove)
-    canvas.addEventListener("pointerleave", onLeave)
     return () => {
       disposed = true
       cancelAnimationFrame(raf)
       canvas.removeEventListener("pointermove", onMove)
-      canvas.removeEventListener("pointerleave", onLeave)
     }
   }, [artSrc, settings, interactive])
 
