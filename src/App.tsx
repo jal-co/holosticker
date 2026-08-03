@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Download, Moon, Sun } from "lucide-react"
+import { Analytics } from "@vercel/analytics/react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -266,6 +267,7 @@ export default function App() {
           </a>
         </div>
       </main>
+      <Analytics />
     </div>
   )
 }
