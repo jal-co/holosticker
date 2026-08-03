@@ -136,10 +136,12 @@ out vec3 vNormal;
 out vec3 vWorldPos;
 out float vAO;
 uniform float uCurlH;
+uniform float uLift; // layer offset along the surface normal
 void main() {
   vUv = uv;
   vNormal = normalize(mat3(modelMatrix) * normal);
-  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vec3 p = position + normal * uLift;
+  vec4 wp = modelMatrix * vec4(p, 1.0);
   vWorldPos = wp.xyz;
   vAO = clamp(position.z / max(uCurlH, 1e-4), 0.0, 1.0);
   gl_Position = projectionMatrix * viewMatrix * wp;
@@ -167,6 +169,8 @@ uniform float uGrain;
 uniform float uPattern;
 uniform float uOverlay;
 uniform float uInk;
+uniform float uSeed; // per-layer texture variation
+uniform float uBackStyle; // 0 = glossy foil liner, 1 = the layer's own map
 uniform float uPeelOn;
 uniform vec2 uLight;
 
@@ -198,7 +202,7 @@ vec3 envSample(vec3 R, float rough) {
 
 // diffraction phase pattern across the sticker surface
 float patternPhase(vec2 uv) {
-  float n = vnoise(uv * 5.0 + uLight);
+  float n = vnoise(uv * 5.0 + uLight + uSeed * 2.7);
   if (uPattern < 0.5) {
     return dot(uv - uLight, normalize(vec2(0.85, 0.55))) * uBands + n * 1.5;
   } else if (uPattern < 1.5) {
@@ -246,15 +250,23 @@ void main() {
   vec3 N = normalize(vNormal);
   vec3 V = normalize(uCamPos - vWorldPos);
   if (!gl_FrontFacing) {
-    // glossy foil liner backside: mirror-like with rainbow catch
     N = -N;
     vec3 Rb = reflect(-V, N);
     float cosT = clamp(dot(N, V), 0.0, 1.0);
     float shade = mix(1.0, 0.5, (1.0 - vAO) * uPeelOn);
-    vec3 col = vec3(0.55);
-    vec3 env = envSample(Rb, 0.1) * 1.6;
-    float fres = 0.4 + 0.6 * pow(1.0 - cosT, 3.0);
-    col += env * (0.5 + 0.5 * fres) * mix(vec3(1.0), filmColor(cosT, vUv, Rb, smoothstep(0.25, 0.85, abs(N.z))), 0.75);
+    vec3 col;
+    if (uBackStyle > 0.5) {
+      // the layer's own surface, seen from behind (what the peel reveals)
+      vec3 env = envSample(Rb, clamp(uRough, 0.0, 1.0));
+      float fres = 0.06 + 0.5 * pow(1.0 - cosT, 4.0) * (1.0 - uRough);
+      col = base.rgb * (0.62 + 0.5 * cosT) + env * fres * uMetal;
+    } else {
+      // classic glossy foil liner: mirror-like with rainbow catch
+      col = vec3(0.55);
+      vec3 env = envSample(Rb, 0.1) * 1.6;
+      float fres = 0.4 + 0.6 * pow(1.0 - cosT, 3.0);
+      col += env * (0.5 + 0.5 * fres) * mix(vec3(1.0), filmColor(cosT, vUv, Rb, smoothstep(0.25, 0.85, abs(N.z))), 0.75);
+    }
     col *= shade;
     outColor = vec4(lin2srgb(col), base.a);
     return;
@@ -282,7 +294,9 @@ void main() {
   }
 
   // ---- environment reflection with fresnel ----
-  float rough = mix(uRough, 0.9, flakeI);
+  // each layer gets its own finish: subtle roughness variation by seed
+  float rough = mix(uRough, 0.9, flakeI) *
+    mix(0.7, 1.45, fract(uSeed * 0.617));
   vec3 env = envSample(R, rough) * uEnvIntensity;
   env = mix(env, flakeEnv * uEnvIntensity, flakeI);
 
@@ -312,6 +326,19 @@ void main() {
 
   outColor = vec4(lin2srgb(color), base.a);
 }`
+
+/** Uniform overrides per layer material preset. */
+const LAYER_MATERIAL_PRESETS: Record<
+  string,
+  Record<string, number> | undefined
+> = {
+  auto: undefined,
+  glitter: { uGrain: 1.0, uRough: 0.45, uMetal: 0.8, uHolo: 1.0 },
+  chrome: { uGrain: 0.0, uRough: 0.04, uMetal: 1.0, uHolo: 0.25 },
+  matte: { uGrain: 0.08, uRough: 0.85, uMetal: 0.05, uHolo: 0.15 },
+  prism: { uHolo: 1.0, uBands: 16, uOverlay: 1, uMetal: 0.7, uRough: 0.15 },
+  satin: { uRough: 0.35, uMetal: 0.5, uHolo: 0.5, uGrain: 0.15 },
+}
 
 export type GifAnim = "sweep" | "peel"
 
@@ -345,6 +372,7 @@ export class HoloRenderer {
   private source: ImageBitmap | null = null
   private geomKey = ""
   private mapsKey = ""
+  private layerMeshes: THREE.Mesh[] = []
   private mapAspect = 1
   private tilt = new THREE.Vector2(0, 0)
   private tiltTarget = new THREE.Vector2(0, 0)
@@ -387,6 +415,9 @@ export class HoloRenderer {
         uPattern: { value: 0 },
         uOverlay: { value: 0 },
         uInk: { value: 1 },
+        uSeed: { value: 0 },
+        uBackStyle: { value: 0 },
+        uLift: { value: 0 },
         uPeelOn: { value: 0 },
         uLight: { value: new THREE.Vector2(0.65, 0.7) },
         uCurlH: { value: 0.1 },
@@ -438,7 +469,7 @@ export class HoloRenderer {
   private updateMaps(s: StickerSettings) {
     const src = this.source
     if (!src) return
-    const key = `${s.border}|${s.cutTolerance}|${s.ink}|${src.width}x${src.height}`
+    const key = `${s.border}|${s.cutTolerance}|${s.ink}|${s.layersOn}|${s.layerMaterials.join()}|${src.width}x${src.height}`
     if (key === this.mapsKey) return
     this.mapsKey = key
 
@@ -507,6 +538,90 @@ export class HoloRenderer {
     old?.dispose()
     this.material.uniforms.uMap.value = tex
     this.mapAspect = ow / oh
+
+    // ---- exploded production layers: backing / kiss-cut blank / art ----
+    for (const m of this.layerMeshes) {
+      this.mesh.remove(m)
+      ;(m.material as THREE.ShaderMaterial).uniforms.uMap.value?.dispose?.()
+      ;(m.material as THREE.ShaderMaterial).dispose()
+    }
+    this.layerMeshes = []
+    if (s.layersOn) {
+      const layers: Uint8ClampedArray<ArrayBuffer>[] = []
+
+      // 1. backing: the kiss-cut silhouette seen from the liner side,
+      // matte paper white in the exact die-cut shape
+      const back = new Uint8ClampedArray(new ArrayBuffer(ow * oh * 4))
+      for (let i = 0; i < ow * oh; i++) {
+        back[i * 4] = 245
+        back[i * 4 + 1] = 244
+        back[i * 4 + 2] = 240
+        back[i * 4 + 3] = out[i * 4 + 3] // same die-cut alpha
+      }
+      layers.push(back)
+
+      // 2. kiss-cut blank: the die-cut shape in bare foil, no ink
+      const blank = new Uint8ClampedArray(new ArrayBuffer(ow * oh * 4))
+      for (let i = 0; i < ow * oh; i++) {
+        blank[i * 4] = 214
+        blank[i * 4 + 1] = 216
+        blank[i * 4 + 2] = 220
+        blank[i * 4 + 3] = out[i * 4 + 3] // same die-cut alpha as the base
+      }
+      layers.push(blank)
+
+      // 3. the original artwork, printed alone
+      const art = new Uint8ClampedArray(new ArrayBuffer(ow * oh * 4))
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4
+          if (img.data[i + 3] === 0) continue
+          const o = ((y + off) * ow + x + off) * 4
+          art[o] = img.data[i]
+          art[o + 1] = img.data[i + 1]
+          art[o + 2] = img.data[i + 2]
+          art[o + 3] = img.data[i + 3]
+        }
+      }
+      layers.push(art)
+
+      layers.forEach((lout, li) => {
+        const lc = document.createElement("canvas")
+        lc.width = ow
+        lc.height = oh
+        lc.getContext("2d")!.putImageData(new ImageData(lout, ow, oh), 0, 0)
+        const ltex = new THREE.CanvasTexture(lc)
+        ltex.anisotropy = 8
+        ltex.colorSpace = THREE.NoColorSpace
+        ltex.premultiplyAlpha = false
+        // preset overrides get their own uniform objects so they hold
+        // their value; everything else keeps tracking the sliders
+        const preset =
+          LAYER_MATERIAL_PRESETS[s.layerMaterials[li] ?? "auto"] ?? {}
+        const overrides = Object.fromEntries(
+          Object.entries(preset).map(([k, v]) => [k, { value: v }]),
+        )
+        const lmat = new THREE.ShaderMaterial({
+          glslVersion: this.material.glslVersion,
+          vertexShader: this.material.vertexShader,
+          fragmentShader: this.material.fragmentShader,
+          side: this.material.side,
+          transparent: true,
+          uniforms: {
+            ...this.material.uniforms,
+            ...overrides,
+            uMap: { value: ltex },
+            uSeed: { value: li + 1 },
+            uBackStyle: { value: 1 },
+            uLift: { value: 0 },
+          },
+        })
+        const lmesh = new THREE.Mesh(this.geometry, lmat)
+        lmesh.renderOrder = li + 1
+        this.mesh.add(lmesh)
+        this.layerMeshes.push(lmesh)
+      })
+    }
   }
 
   /** Bend the plane: gentle bow + cylinder page-curl for the peel. */
@@ -601,6 +716,16 @@ export class HoloRenderer {
 
     this.mesh.visible = this.source !== null
     this.mesh.scale.set(s.size * 1.15, s.size * 1.15, 1)
+
+    // layered construction: hide the flat composite; lift each layer
+    // along the surface normal so the stack flips correctly on the peel
+    this.material.visible = !s.layersOn || this.layerMeshes.length === 0
+    for (let i = 0; i < this.layerMeshes.length; i++) {
+      this.layerMeshes[i].position.z = 0
+      const u = (this.layerMeshes[i].material as THREE.ShaderMaterial)
+        .uniforms
+      u.uLift.value = 0.004 + i * s.layerDepth
+    }
 
     // fly-off: continue the peel motion out of frame, toward the peel
     // side and lifted off the surface
