@@ -16,6 +16,20 @@ import type { StickerSettings } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 
 type GifBackground = "transparent" | "white" | "black"
+export type AnimFormat = "gif" | "video"
+
+export interface AnimExportOpts {
+  format: AnimFormat
+  anim: GifAnim
+  background: GifBackground
+  speed: number
+}
+
+export interface AnimResult {
+  url: string
+  filename: string
+  kind: AnimFormat
+}
 
 const bgClass: Record<GifBackground, string> = {
   transparent:
@@ -31,19 +45,14 @@ interface Props {
   imgAspect: number
   settings: StickerSettings
   progress: number | null
-  /** Object URL of the finished GIF, shown for a gesture-driven save. */
-  result: string | null
+  initialFormat: AnimFormat
+  /** The finished file, shown for a gesture-driven save. */
+  result: AnimResult | null
+  /** Set when the file needs manual attachment to the X post. */
+  shareHint: "drag" | "paste" | null
   onClearResult: () => void
-  onExport: (opts: {
-    anim: GifAnim
-    background: GifBackground
-    speed: number
-  }) => void
-  onShare: (opts: {
-    anim: GifAnim
-    background: GifBackground
-    speed: number
-  }) => void
+  onExport: (opts: AnimExportOpts) => void
+  onShare: (opts: AnimExportOpts) => void
 }
 
 export function GifExportDialog({
@@ -53,7 +62,9 @@ export function GifExportDialog({
   imgAspect,
   settings,
   progress,
+  initialFormat,
   result,
+  shareHint,
   onClearResult,
   onExport,
   onShare,
@@ -61,9 +72,26 @@ export function GifExportDialog({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const rendererRef = useRef<HoloRenderer | null>(null)
   const lastImageRef = useRef<ImageBitmap | null | undefined>(undefined)
+  const [format, setFormat] = useState<AnimFormat>(initialFormat)
   const [anim, setAnim] = useState<GifAnim>("sweep")
   const [background, setBackground] = useState<GifBackground>("transparent")
   const [speed, setSpeed] = useState(1)
+
+  // follow the entry point (GIF vs MP4 menu item)
+  useEffect(() => {
+    if (open) setFormat(initialFormat)
+  }, [open, initialFormat])
+
+  // video cannot carry transparency
+  const effectiveBackground =
+    format === "video" && background === "transparent" ? "white" : background
+
+  const opts: AnimExportOpts = {
+    format,
+    anim,
+    background: effectiveBackground,
+    speed,
+  }
 
   // live looping preview of the chosen animation
   useEffect(() => {
@@ -107,14 +135,22 @@ export function GifExportDialog({
     return () => cancelAnimationFrame(raf)
   }, [open, result, anim, speed, image, imgAspect, settings])
 
+  const busy = progress !== null
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 z-50 w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-background p-4 shadow-lg outline-none">
+        <Dialog.Content
+          // buttons disable while encoding, which moves focus out of the
+          // dialog; without these Radix reads that as a dismissal
+          onFocusOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+          className="fixed top-1/2 left-1/2 z-50 w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-background p-4 shadow-lg outline-none"
+        >
           <div className="mb-3 flex items-center justify-between">
             <Dialog.Title className="text-sm font-semibold">
-              Export GIF
+              Export animation
             </Dialog.Title>
             <Dialog.Close asChild>
               <Button
@@ -131,21 +167,50 @@ export function GifExportDialog({
           <div
             className={cn(
               "relative aspect-square w-full overflow-hidden rounded-lg border",
-              bgClass[background],
+              bgClass[effectiveBackground],
             )}
           >
             {result ? (
-              <img
-                src={result}
-                alt="Finished GIF preview"
-                className="size-full object-contain"
-              />
+              result.kind === "video" ? (
+                <video
+                  src={result.url}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="size-full object-contain"
+                />
+              ) : (
+                <img
+                  src={result.url}
+                  alt="Finished GIF preview"
+                  className="size-full object-contain"
+                />
+              )
             ) : (
               <canvas ref={canvasRef} className="size-full" />
             )}
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Format</Label>
+              <Select
+                value={format}
+                onValueChange={(v) => {
+                  onClearResult()
+                  setFormat(v as AnimFormat)
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gif">GIF</SelectItem>
+                  <SelectItem value="video">MP4 video</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Animation</Label>
               <Select
@@ -167,7 +232,7 @@ export function GifExportDialog({
             <div className="space-y-1.5">
               <Label className="text-xs">Background</Label>
               <Select
-                value={background}
+                value={effectiveBackground}
                 onValueChange={(v) => {
                   onClearResult()
                   setBackground(v as GifBackground)
@@ -177,39 +242,41 @@ export function GifExportDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="transparent">Transparent</SelectItem>
+                  {format !== "video" && (
+                    <SelectItem value="transparent">Transparent</SelectItem>
+                  )}
                   <SelectItem value="white">White</SelectItem>
                   <SelectItem value="black">Black</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          </div>
-
-          <div className="mt-3 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs">Speed</Label>
-              <span className="text-xs tabular-nums text-muted-foreground">
-                {speed.toFixed(2)}×
-              </span>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Speed</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {speed.toFixed(2)}×
+                </span>
+              </div>
+              <Slider
+                value={[speed]}
+                min={0.5}
+                max={2}
+                step={0.05}
+                onValueChange={([v]) => {
+                  onClearResult()
+                  setSpeed(v)
+                }}
+                className="pt-2.5"
+              />
             </div>
-            <Slider
-              value={[speed]}
-              min={0.5}
-              max={2}
-              step={0.05}
-              onValueChange={([v]) => {
-                onClearResult()
-                setSpeed(v)
-              }}
-            />
           </div>
 
           {result ? (
             <div className="mt-3 flex gap-2">
               <Button className="flex-1" asChild>
-                <a href={result} download="holo-sticker.gif">
+                <a href={result.url} download={result.filename}>
                   <Clapperboard aria-hidden />
-                  Save GIF
+                  Save {result.kind === "video" ? "video" : "GIF"}
                 </a>
               </Button>
               <Button variant="outline" onClick={onClearResult}>
@@ -219,18 +286,20 @@ export function GifExportDialog({
           ) : (
             <Button
               className="mt-3 w-full"
-              disabled={progress !== null}
-              onClick={() => onExport({ anim, background, speed })}
+              disabled={busy}
+              onClick={() => onExport(opts)}
             >
               <Clapperboard aria-hidden />
-              {progress !== null ? `Encoding… ${progress}%` : "Export GIF"}
+              {busy
+                ? `Encoding… ${progress}%`
+                : `Export ${format === "video" ? "video" : "GIF"}`}
             </Button>
           )}
           <Button
             variant="outline"
             className="mt-2 w-full"
-            disabled={progress !== null}
-            onClick={() => onShare({ anim, background, speed })}
+            disabled={busy}
+            onClick={() => onShare(opts)}
           >
             <svg
               viewBox="0 0 24 24"
@@ -243,6 +312,13 @@ export function GifExportDialog({
             </svg>
             Share on X
           </Button>
+          {shareHint && (
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              {shareHint === "paste"
+                ? "Copied - paste (\u2318V) into the post to attach it."
+                : "Save the file and drag it into the post to attach it."}
+            </p>
+          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

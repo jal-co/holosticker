@@ -13,7 +13,11 @@ import {
 } from "@/components/ui/select"
 import { ChangelogDialog } from "@/components/ChangelogDialog"
 import { ComponentExportDialog } from "@/components/ComponentExportDialog"
-import { GifExportDialog } from "@/components/GifExportDialog"
+import {
+  GifExportDialog,
+  type AnimExportOpts,
+  type AnimResult,
+} from "@/components/GifExportDialog"
 import { currentVersion } from "@/lib/changelog"
 import { Sidebar } from "@/components/Sidebar"
 import { StickerCanvas } from "@/components/StickerCanvas"
@@ -30,7 +34,11 @@ export default function App() {
   const [exporting, setExporting] = useState(false)
   const [gifProgress, setGifProgress] = useState<number | null>(null)
   const [gifDialogOpen, setGifDialogOpen] = useState(false)
-  const [gifResult, setGifResult] = useState<string | null>(null)
+  const [gifResult, setGifResult] = useState<AnimResult | null>(null)
+  const [gifFormat, setGifFormat] = useState<"gif" | "video">("gif")
+  const [gifShareHint, setGifShareHint] = useState<"drag" | "paste" | null>(
+    null,
+  )
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [componentDialogOpen, setComponentDialogOpen] = useState(false)
   const [tiltLocked, setTiltLocked] = useState(false)
@@ -131,38 +139,57 @@ export default function App() {
     URL.revokeObjectURL(url)
   }, [settings])
 
-  const handleExportGIF = useCallback(
-    async (opts: {
-      anim: "sweep" | "peel"
-      background: "transparent" | "white" | "black"
-      speed: number
-    }) => {
+  const encodeAnim = useCallback(
+    async (opts: AnimExportOpts): Promise<AnimResult | null> => {
       const renderer = rendererRef.current
-      if (!renderer) return
+      if (!renderer) return null
+      const onProgress = (done: number, total: number) =>
+        setGifProgress(Math.round((done / total) * 100))
+      const common = {
+        settings,
+        imgAspect,
+        anim: opts.anim,
+        background: opts.background,
+        speed: opts.speed,
+        onProgress,
+      }
+      if (opts.format === "video") {
+        const { blob, extension } = await renderer.exportVideo(common)
+        return {
+          url: URL.createObjectURL(blob),
+          filename: `holo-sticker.${extension}`,
+          kind: "video",
+        }
+      }
+      const blob = await renderer.exportGIF(common)
+      return {
+        url: URL.createObjectURL(blob),
+        filename: "holo-sticker.gif",
+        kind: "gif",
+      }
+    },
+    [settings, imgAspect],
+  )
+
+  const handleExportAnim = useCallback(
+    async (opts: AnimExportOpts) => {
       setExporting(true)
       try {
-        const blob = await renderer.exportGIF({
-          settings,
-          imgAspect,
-          anim: opts.anim,
-          background: opts.background,
-          speed: opts.speed,
-          onProgress: (done, total) =>
-            setGifProgress(Math.round((done / total) * 100)),
-        })
-        // encoding takes long enough that the click's user activation has
-        // expired, so auto-downloads get dropped sometimes; show the
-        // result and let a real click save it instead
-        setGifResult((prev) => {
-          if (prev) URL.revokeObjectURL(prev)
-          return URL.createObjectURL(blob)
-        })
+        // encoding outlives the click's user activation, so downloads are
+        // gesture-driven from the result view instead of automatic
+        const result = await encodeAnim(opts)
+        if (result) {
+          setGifResult((prev) => {
+            if (prev) URL.revokeObjectURL(prev.url)
+            return result
+          })
+        }
       } finally {
         setExporting(false)
         setGifProgress(null)
       }
     },
-    [settings, imgAspect],
+    [encodeAnim],
   )
 
   const handleExportComponent = useCallback(() => {
@@ -189,44 +216,57 @@ export default function App() {
     setComponentDialogOpen(true)
   }, [image, settings, imageName])
 
-  const handleShareGIF = useCallback(
-    async (opts: {
-      anim: "sweep" | "peel"
-      background: "transparent" | "white" | "black"
-      speed: number
-    }) => {
+  const handleShareAnim = useCallback(
+    async (opts: AnimExportOpts) => {
       const text =
-        "Just made a holographic sticker with Holosticker ✨ by @jalcowastaken"
+        "Just made a holographic sticker with Holosticker \u2728 by @jalcowastaken"
       const url = "https://holosticker.dev"
-      const renderer = rendererRef.current
-      if (renderer && image) {
+      const isMobile =
+        /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ||
+        (navigator.maxTouchPoints > 1 && matchMedia("(pointer: coarse)").matches)
+      if (image) {
         setExporting(true)
         try {
-          const blob = await renderer.exportGIF({
-            settings,
-            imgAspect,
-            anim: opts.anim,
-            background: opts.background,
-            speed: opts.speed,
-            onProgress: (done, total) =>
-              setGifProgress(Math.round((done / total) * 100)),
-          })
-          const file = new File([blob], "holo-sticker.gif", {
-            type: "image/gif",
-          })
-          // share the actual gif when the platform supports it
-          if (navigator.canShare?.({ files: [file] })) {
-            await navigator.share({ files: [file], text: `${text} ${url}` })
-            return
+          // reuse the already-encoded file when one is showing
+          const result =
+            gifResult && gifResult.kind === opts.format
+              ? gifResult
+              : await encodeAnim(opts)
+          if (result && result !== gifResult) {
+            setGifResult((prev) => {
+              if (prev) URL.revokeObjectURL(prev.url)
+              return result
+            })
           }
-          // otherwise download it so it can be attached to the post
-          const dl = URL.createObjectURL(blob)
-          const a = document.createElement("a")
-          a.href = dl
-          a.download = "holo-sticker.gif"
-          a.click()
-          URL.revokeObjectURL(dl)
-        } catch {
+          if (result && isMobile) {
+            // mobile share sheets can hand the file straight to the X app
+            const blob = await (await fetch(result.url)).blob()
+            const file = new File([blob], result.filename, {
+              type: result.kind === "gif" ? "image/gif" : "video/mp4",
+            })
+            if (navigator.canShare?.({ files: [file] })) {
+              await navigator.share({ files: [file], text: `${text} ${url}` })
+              return
+            }
+          }
+          // desktop: X's web intent cannot carry media and the macOS share
+          // sheet has no X target. Try the clipboard (the composer accepts
+          // pasted images), otherwise hint to drag the saved file in.
+          let hint: "drag" | "paste" = "drag"
+          if (result) {
+            try {
+              const blob = await (await fetch(result.url)).blob()
+              await navigator.clipboard.write([
+                new ClipboardItem({ [blob.type]: blob }),
+              ])
+              hint = "paste"
+            } catch {
+              // clipboard cannot carry this type; drag it is
+            }
+          }
+          setGifShareHint(hint)
+        } catch (err) {
+          console.warn("[share] failed", err)
           // fall through to the plain intent
         } finally {
           setExporting(false)
@@ -234,12 +274,12 @@ export default function App() {
         }
       }
       window.open(
-        `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
+        `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}&related=jalcowastaken`,
         "_blank",
         "noopener",
       )
     },
-    [image, settings, imgAspect],
+    [image, gifResult, encodeAnim],
   )
 
   const handleExportGLB = useCallback(async () => {
@@ -385,13 +425,31 @@ export default function App() {
                     </span>
                   </DropdownMenu.Item>
                   <DropdownMenu.Item
-                    onSelect={() => setGifDialogOpen(true)}
+                    onSelect={() => {
+                      setGifFormat("gif")
+                      setGifDialogOpen(true)
+                    }}
                     className="flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
                   >
                     <svg viewBox="0 0 24 24" fill="currentColor" className="size-4 text-muted-foreground" aria-hidden="true">
                       <path fillRule="evenodd" clipRule="evenodd" d="M2 6.75C2 5.23122 3.23122 4 4.75 4H19.25C20.7688 4 22 5.23122 22 6.75V17.25C22 18.7688 20.7688 20 19.25 20H4.75C3.23122 20 2 18.7688 2 17.25V6.75ZM5.75 12.3676C5.75 14.0113 6.70955 15 8.34036 15C9.79045 15 10.7672 14.138 10.7672 12.8662V12.5155C10.7672 11.9789 10.5176 11.738 9.94966 11.738H8.89544C8.51678 11.738 8.31454 11.9113 8.31454 12.2282C8.31454 12.5493 8.52108 12.7268 8.89544 12.7268H9.4247V12.9718C9.4247 13.5 9.01162 13.8549 8.3963 13.8549C7.60456 13.8549 7.16997 13.3268 7.16997 12.3634V11.6662C7.16997 10.6901 7.59596 10.1789 8.40921 10.1789C8.95193 10.1789 9.27253 10.4939 9.61231 10.8279L9.63554 10.8507C9.76033 10.9732 9.88941 11.0282 10.0572 11.0282C10.3972 11.0282 10.6338 10.8 10.6338 10.4662C10.6338 10.1324 10.3799 9.76901 9.99268 9.49437C9.56239 9.17746 8.97289 9 8.30594 9C6.72246 9 5.75 10.0014 5.75 11.5986V12.3676ZM12.3894 14.9155C12.8412 14.9155 13.0951 14.6451 13.0951 14.1634V9.81549C13.0951 9.33803 12.8369 9.06338 12.3808 9.06338C11.9247 9.06338 11.6708 9.3338 11.6708 9.81549V14.1634C11.6708 14.6408 11.9333 14.9155 12.3894 14.9155ZM15.6596 14.1634C15.6596 14.6451 15.4101 14.9155 14.9626 14.9155C14.5022 14.9155 14.2354 14.6366 14.2354 14.1634V9.90423C14.2354 9.38873 14.5237 9.10563 15.0572 9.10563H17.6863C18.0133 9.10563 18.25 9.34225 18.25 9.67183C18.25 9.99718 18.0133 10.2254 17.6863 10.2254H15.6596V11.6113H17.4669C17.8068 11.6113 18.0306 11.831 18.0306 12.1563C18.0306 12.4817 17.8025 12.7014 17.4669 12.7014H15.6596V14.1634Z" />
                     </svg>
                     GIF animation
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      loop
+                    </span>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onSelect={() => {
+                      setGifFormat("video")
+                      setGifDialogOpen(true)
+                    }}
+                    className="flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="size-4 text-muted-foreground" aria-hidden="true">
+                      <path fillRule="evenodd" clipRule="evenodd" d="M2 6.75C2 5.23122 3.23122 4 4.75 4H19.25C20.7688 4 22 5.23122 22 6.75V17.25C22 18.7688 20.7688 20 19.25 20H4.75C3.23122 20 2 18.7688 2 17.25V6.75ZM10.5 8.75C10.0858 8.75 9.75 9.08579 9.75 9.5V14.5C9.75 14.9142 10.0858 15.25 10.5 15.25C10.6321 15.25 10.762 15.2151 10.8763 15.1489L15.1263 12.6489C15.3555 12.5148 15.5 12.2683 15.5 12C15.5 11.7317 15.3555 11.4852 15.1263 11.3511L10.8763 8.85114C10.762 8.78486 10.6321 8.75 10.5 8.75Z" />
+                    </svg>
+                    MP4 video
                     <span className="ml-auto text-xs text-muted-foreground">
                       loop
                     </span>
@@ -537,28 +595,33 @@ export default function App() {
       <GifExportDialog
         open={gifDialogOpen}
         onOpenChange={(o) => {
-          if (gifProgress === null) {
+          if (!exporting && gifProgress === null) {
             setGifDialogOpen(o)
-            if (!o)
+            if (!o) {
+              setGifShareHint(null)
               setGifResult((prev) => {
-                if (prev) URL.revokeObjectURL(prev)
+                if (prev) URL.revokeObjectURL(prev.url)
                 return null
               })
+            }
           }
         }}
         image={image}
         imgAspect={imgAspect}
         settings={settings}
         progress={gifProgress}
+        initialFormat={gifFormat}
         result={gifResult}
-        onClearResult={() =>
+        shareHint={gifShareHint}
+        onClearResult={() => {
+          setGifShareHint(null)
           setGifResult((prev) => {
-            if (prev) URL.revokeObjectURL(prev)
+            if (prev) URL.revokeObjectURL(prev.url)
             return null
           })
-        }
-        onExport={(opts) => void handleExportGIF(opts)}
-        onShare={(opts) => void handleShareGIF(opts)}
+        }}
+        onExport={(opts) => void handleExportAnim(opts)}
+        onShare={(opts) => void handleShareAnim(opts)}
       />
       <Analytics />
     </div>

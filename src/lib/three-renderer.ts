@@ -1068,6 +1068,99 @@ export class HoloRenderer {
     return new Blob([gif.bytes() as unknown as BlobPart], { type: "image/gif" })
   }
 
+  /**
+   * Export a looping video (MP4 where the browser supports it, WebM
+   * otherwise) by recording the canvas in real time - same animations as
+   * the GIF export.
+   */
+  async exportVideo(input: {
+    settings: StickerSettings
+    imgAspect: number
+    anim?: GifAnim
+    background?: "transparent" | "white" | "black"
+    speed?: number
+    onProgress?: (done: number, total: number) => void
+  }): Promise<{ blob: Blob; extension: string }> {
+    const anim = input.anim ?? "sweep"
+    const speed = Math.min(2, Math.max(0.5, input.speed ?? 1))
+    const size = Math.min(input.settings.exportSize, 1024)
+    const loopMs = (anim === "peel" ? 2880 : 2400) / speed
+
+    const prevW = this.canvas.width
+    const prevH = this.canvas.height
+    const prevTilt = this.tilt.clone()
+    const prevTarget = this.tiltTarget.clone()
+    this.busy = true
+    this.canvas.width = size
+    this.canvas.height = size
+    // video has no alpha channel: composite onto a solid background
+    this.renderer.setClearColor(
+      input.background === "black" ? 0x000000 : 0xffffff,
+      1,
+    )
+
+    const stream = this.canvas.captureStream(30)
+    const mimeType =
+      [
+        "video/mp4;codecs=avc1.42E01E",
+        "video/mp4",
+        "video/webm;codecs=vp9",
+        "video/webm",
+      ].find((m) => MediaRecorder.isTypeSupported(m)) ?? "video/webm"
+    const recorder = new MediaRecorder(stream, {
+      mimeType,
+      videoBitsPerSecond: 10_000_000,
+    })
+    const chunks: BlobPart[] = []
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data)
+    }
+    const stopped = new Promise<Blob>((resolve) => {
+      recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }))
+    })
+    recorder.start()
+
+    const t0 = performance.now()
+    await new Promise<void>((resolve) => {
+      const frame = () => {
+        const elapsed = performance.now() - t0
+        const t = Math.min(elapsed / loopMs, 1)
+        let frameSettings = input.settings
+        let flyOff = 0
+        if (anim === "sweep") {
+          const a = t * Math.PI * 2
+          this.tilt.set(Math.sin(a) * 0.85, Math.cos(a) * 0.55)
+        } else {
+          this.tilt.set(0, 0)
+          const pose = gifPeelPose(t)
+          frameSettings = { ...input.settings, peelAmount: pose.peel }
+          flyOff = pose.fly
+        }
+        this.tiltTarget.copy(this.tilt)
+        this.renderInternal({
+          settings: frameSettings,
+          imgAspect: input.imgAspect,
+          flyOff,
+        })
+        input.onProgress?.(Math.round(t * 100), 100)
+        if (elapsed >= loopMs) resolve()
+        else requestAnimationFrame(frame)
+      }
+      frame()
+    })
+    recorder.stop()
+    const blob = await stopped
+
+    this.renderer.setClearColor(0x000000, 0)
+    this.canvas.width = prevW
+    this.canvas.height = prevH
+    this.tilt.copy(prevTilt)
+    this.tiltTarget.copy(prevTarget)
+    this.busy = false
+    this.render(input)
+    return { blob, extension: mimeType.includes("mp4") ? "mp4" : "webm" }
+  }
+
   /** Export the current sticker (peel geometry + die-cut art) as a GLB. */
   async exportGLB(input: {
     settings: StickerSettings
