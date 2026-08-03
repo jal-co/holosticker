@@ -178,10 +178,12 @@ float patternPhase(vec2 uv) {
   return n * 5.0 + vnoise(uv * 11.0) * 2.5;
 }
 
-// thin-film iridescence driven by view angle + surface diffraction pattern
-vec3 filmColor(float cosT, vec2 uv) {
+// holofoil diffraction: the hue at each point cycles with the view/reflect
+// direction, so rainbow bands sweep across the foil as it tilts
+vec3 filmColor(float cosT, vec2 uv, vec3 R) {
+  float sweep = dot(R.xy, normalize(vec2(0.8, 0.6))) * (uBands * 0.4);
   float phase = 6.2831853 *
-    (0.35 + 1.15 * (1.0 - cosT) + patternPhase(uv) * 0.09 + uHue);
+    (0.35 + 1.15 * (1.0 - cosT) + patternPhase(uv) * 0.18 + sweep + uHue);
   vec3 rain = 0.5 + 0.5 * vec3(sin(phase), sin(phase + 2.094), sin(phase + 4.188));
   return mix(vec3(1.0), rain, uHolo);
 }
@@ -202,7 +204,7 @@ void main() {
     vec3 col = vec3(0.55);
     vec3 env = envSample(Rb, 0.1) * 1.6;
     float fres = 0.4 + 0.6 * pow(1.0 - cosT, 3.0);
-    col += env * (0.5 + 0.5 * fres) * mix(vec3(1.0), filmColor(cosT, vUv), 0.75);
+    col += env * (0.5 + 0.5 * fres) * mix(vec3(1.0), filmColor(cosT, vUv, Rb), 0.75);
     col *= shade;
     outColor = vec4(lin2srgb(col), base.a);
     return;
@@ -222,7 +224,7 @@ void main() {
     vec3 pN = normalize(N + vec3(angleOff, angleOff * 0.7, 0.0));
     vec3 PR = reflect(-V, pN);
     float spark = pow(clamp(dot(pN, V) * 0.5 + 0.5, 0.0, 1.0), 8.0);
-    flakeEnv = envSample(PR, 0.15) * mix(vec3(1.0), filmColor(dot(pN, V), vUv), 0.9);
+    flakeEnv = envSample(PR, 0.15) * mix(vec3(1.0), filmColor(dot(pN, V), vUv, PR), 0.9);
     flakeI = clamp(mask * max(spark, 0.2) * 6.0, 0.0, 1.0) * min(uGrain * 2.0, 1.0);
   }
 
@@ -235,7 +237,7 @@ void main() {
   float fres = F0 + (1.0 - F0) * pow(1.0 - cosT, 5.0);
 
   // iridescence, strongest on bright foil, subtle on dark ink
-  vec3 iri = filmColor(cosT, vUv);
+  vec3 iri = filmColor(cosT, vUv, R);
   iri = mix(vec3(1.0), iri, mix(0.55, 1.0, brightness));
 
   // ---- key light (follows the light position control) ----
@@ -269,6 +271,8 @@ export class HoloRenderer {
   private geomKey = ""
   private mapsKey = ""
   private mapAspect = 1
+  private tilt = new THREE.Vector2(0, 0)
+  private tiltTarget = new THREE.Vector2(0, 0)
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -342,6 +346,11 @@ export class HoloRenderer {
   setImage(source: ImageBitmap | null) {
     this.source = source
     this.mapsKey = ""
+  }
+
+  /** Pointer position in [-1, 1]; the sticker tilts toward it. */
+  setTilt(x: number, y: number) {
+    this.tiltTarget.set(x, y)
   }
 
   hasImage() {
@@ -469,7 +478,7 @@ export class HoloRenderer {
       // gentle overall bow so the sticker doesn't look laser-flat
       const bx = (ux / (sx * 0.5)) ** 2
       const by = (uy / (sy * 0.5)) ** 2
-      z += 0.03 * (1 - 0.5 * bx - 0.5 * by)
+      z += 0.05 * (1 - 0.5 * bx - 0.5 * by)
       pos.setXYZ(i, x, y, z)
     }
     pos.needsUpdate = true
@@ -484,6 +493,10 @@ export class HoloRenderer {
 
     this.mesh.visible = this.source !== null
     this.mesh.scale.set(s.size * 1.15, s.size * 1.15, 1)
+
+    // smooth pointer tilt: makes reflections and iridescence sweep
+    this.tilt.lerp(this.tiltTarget, 0.09)
+    this.mesh.rotation.set(-this.tilt.y * 0.38, this.tilt.x * 0.42, 0)
 
     const u = this.material.uniforms
     u.uHolo.value = s.holoIntensity

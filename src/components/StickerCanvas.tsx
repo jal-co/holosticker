@@ -40,11 +40,12 @@ export function StickerCanvas({
     rendererRef.current?.setImage(image)
   }, [image])
 
-  // render on any change + keep canvas sized to its box
+  // continuous render loop so tilt-driven reflections stay live
   useEffect(() => {
     const canvas = canvasRef.current
     const renderer = rendererRef.current
     if (!canvas || !renderer) return
+    let raf = 0
     const draw = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
       const size = Math.round(canvas.clientWidth * dpr)
@@ -53,11 +54,10 @@ export function StickerCanvas({
         canvas.height = size
       }
       renderer.render({ settings, imgAspect })
+      raf = requestAnimationFrame(draw)
     }
     draw()
-    const obs = new ResizeObserver(draw)
-    obs.observe(canvas)
-    return () => obs.disconnect()
+    return () => cancelAnimationFrame(raf)
   }, [settings, imgAspect, image])
 
   return (
@@ -67,7 +67,18 @@ export function StickerCanvas({
         bgClass[settings.background],
       )}
     >
-      <canvas ref={canvasRef} className="size-full" />
+      <canvas
+        ref={canvasRef}
+        className="size-full touch-none"
+        onPointerMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect()
+          rendererRef.current?.setTilt(
+            ((e.clientX - rect.left) / rect.width) * 2 - 1,
+            1 - ((e.clientY - rect.top) / rect.height) * 2,
+          )
+        }}
+        onPointerLeave={() => rendererRef.current?.setTilt(0, 0)}
+      />
       {!image && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">
           <p className="text-sm font-medium">No artwork yet</p>
