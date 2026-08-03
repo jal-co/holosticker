@@ -102,8 +102,10 @@ float shapeMask(vec2 uv) {
       m = max(m, artAlpha(uv + d * uBorder * 0.55));
     }
   }
-  // sharpen the soft bilinear alpha ramp into a crisp antialiased edge
-  return smoothstep(0.35, 0.65, m);
+  // sharpen the alpha ramp into a crisp edge, antialiased exactly one
+  // screen pixel wide regardless of source resolution or blur
+  float w = clamp(fwidth(m) * 0.75, uPx, 0.25);
+  return smoothstep(0.5 - w, 0.5 + w, m);
 }
 
 // ---------- holographic foil ----------
