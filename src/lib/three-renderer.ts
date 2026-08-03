@@ -569,10 +569,30 @@ export class HoloRenderer {
     this.material.uniforms.uCurlH.value = Math.max(0.15, ext * 0.7)
   }
 
+  /**
+   * While true, the public render() is a no-op so the preview loop can't
+   * resize the canvas mid-export and crop the output.
+   */
+  private busy = false
+
+  /** True while an export owns the canvas size. */
+  get exporting(): boolean {
+    return this.busy
+  }
+
   render(input: {
     settings: StickerSettings
     imgAspect: number
     /** 0..1: slides the sticker out of frame toward the peel corner */
+    flyOff?: number
+  }) {
+    if (this.busy) return
+    this.renderInternal(input)
+  }
+
+  private renderInternal(input: {
+    settings: StickerSettings
+    imgAspect: number
     flyOff?: number
   }) {
     const s = input.settings
@@ -644,10 +664,11 @@ export class HoloRenderer {
   }): Promise<Blob> {
     const prevW = this.canvas.width
     const prevH = this.canvas.height
+    this.busy = true
     const size = input.settings.exportSize
     this.canvas.width = size
     this.canvas.height = size
-    this.render(input)
+    this.renderInternal(input)
     const blob = await new Promise<Blob>((resolve, reject) => {
       this.canvas.toBlob(
         (b) => (b ? resolve(b) : reject(new Error("export failed"))),
@@ -656,6 +677,7 @@ export class HoloRenderer {
     })
     this.canvas.width = prevW
     this.canvas.height = prevH
+    this.busy = false
     this.render(input)
     return blob
   }
@@ -685,6 +707,7 @@ export class HoloRenderer {
     const prevH = this.canvas.height
     const prevTilt = this.tilt.clone()
     const prevTarget = this.tiltTarget.clone()
+    this.busy = true
     this.canvas.width = size
     this.canvas.height = size
 
@@ -709,7 +732,11 @@ export class HoloRenderer {
         flyOff = pose.fly
       }
       this.tiltTarget.copy(this.tilt)
-      this.render({ settings: frameSettings, imgAspect: input.imgAspect, flyOff })
+      this.renderInternal({
+        settings: frameSettings,
+        imgAspect: input.imgAspect,
+        flyOff,
+      })
       sctx.clearRect(0, 0, size, size)
       if (bg !== "transparent") {
         sctx.fillStyle = bg === "white" ? "oklch(1 0 0)" : "oklch(0 0 0)"
@@ -745,6 +772,7 @@ export class HoloRenderer {
     this.canvas.height = prevH
     this.tilt.copy(prevTilt)
     this.tiltTarget.copy(prevTarget)
+    this.busy = false
     this.render(input)
     return new Blob([gif.bytes() as unknown as BlobPart], { type: "image/gif" })
   }

@@ -47,6 +47,11 @@ export function StickerCanvas({
     if (!canvas || !renderer) return
     let raf = 0
     const draw = () => {
+      // an export owns the canvas size; do not fight it mid-encode
+      if (renderer.exporting) {
+        raf = requestAnimationFrame(draw)
+        return
+      }
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
       const w = Math.round(canvas.clientWidth * dpr)
       const h = Math.round(canvas.clientHeight * dpr)
