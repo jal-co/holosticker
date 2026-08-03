@@ -1,4 +1,5 @@
 import { useRef } from "react"
+import { HoloLogo } from "@/components/HoloLogo"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -90,13 +91,8 @@ export function Sidebar({
 
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-sidebar">
-      <div className="px-4 py-4">
-        <img
-          src="/logo.png"
-          alt="Holosticker by JALCO"
-          className="h-12 w-auto select-none"
-          draggable={false}
-        />
+      <div className="px-4 py-3">
+        <HoloLogo />
       </div>
       <Separator />
       <ScrollArea className="min-h-0 flex-1">
