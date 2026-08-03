@@ -229,17 +229,55 @@ float facetOffset(vec2 uv) {
   return hash(vec2(floor(dot(uv, normalize(vec2(1.0, 0.6))) * 16.0), 3.0)) * 0.85;
 }
 
-// holofoil diffraction: the hue at each point cycles with the view/reflect
-// direction, so rainbow bands sweep across the foil as it tilts.
-// flatness damps the view sweep on curled geometry so the fold doesn't
-// alias into thin stripes.
-vec3 filmColor(float cosT, vec2 uv, vec3 R, float flatness) {
+float fbm(vec2 p) {
+  float a = 0.54;
+  float r = 0.0;
+  for (int i = 0; i < 4; i++) {
+    r += a * vnoise(p);
+    p = p * 2.13 + vec2(31.4, 47.2);
+    a *= 0.46;
+  }
+  return r;
+}
+
+/*
+ * Structure inspired by the konvert.design sticker tool
+ * (https://konvert.design/tools/sticker): a two-layer laminate with
+ * ink-tinted metallic reflections, film "pooling" via domain-warped fbm
+ * so the rainbow flows in broad sweeps, curl-driven spectrum shift, and
+ * per-cell glitter twinkle. Colors stay Holosticker's own sine palette.
+ * Credit to konvert for the layering approach.
+ */
+// pooling field for the flare zones; the pattern select shapes the flow
+float poolField(vec2 uv) {
+  vec2 pu;
+  if (uPattern < 0.5) {
+    // anisotropic: stretched along a diagonal, broad flowing sweeps
+    pu = vec2((uv.x + uv.y) * 0.5, (uv.y - uv.x) * 1.1) * (uBands * 0.28);
+  } else if (uPattern < 1.5) {
+    vec2 d = uv - uLight;
+    pu = vec2(length(d) * 1.7, atan(d.y, d.x) * 0.6) * (uBands * 0.24);
+  } else {
+    pu = uv * (uBands * 0.3);
+  }
+  pu += uSeed * 3.1;
+  vec2 warp = vec2(fbm(pu + vec2(5.2, 1.3)), fbm(pu + vec2(1.7, 8.6)));
+  return fbm(pu * 1.4 + warp * 2.0);
+}
+
+// Holosticker's rainbow: the original sine palette, phased by view
+// angle, surface pattern, facets, and curl height
+vec3 rainbowFilm(float cosT, vec2 uv, vec3 R, float flatness) {
   float sweep = dot(R.xy, normalize(vec2(0.8, 0.6))) * (uBands * 0.4) * flatness;
   float phase = 6.2831853 *
     (0.35 + 1.15 * (1.0 - cosT) + patternPhase(uv) * 0.18 + sweep +
-     facetOffset(uv) + uHue);
-  vec3 rain = 0.5 + 0.5 * vec3(sin(phase), sin(phase + 2.094), sin(phase + 4.188));
-  return mix(vec3(1.0), rain, uHolo);
+     facetOffset(uv) + (1.0 - vAO) * uPeelOn * 0.35 + uHue);
+  return 0.5 + 0.5 * vec3(sin(phase), sin(phase + 2.094), sin(phase + 4.188));
+}
+
+// shared film color (backside + flakes)
+vec3 filmColor(float cosT, vec2 uv, vec3 R, float flatness) {
+  return mix(vec3(1.0), rainbowFilm(cosT, uv, R, flatness), uHolo);
 }
 
 void main() {
@@ -303,19 +341,44 @@ void main() {
   float F0 = mix(0.05, 0.9, uMetal);
   float fres = F0 + (1.0 - F0) * pow(1.0 - cosT, 5.0);
 
-  // iridescence, strongest on bright foil, subtle on dark ink
-  vec3 iri = filmColor(cosT, vUv, R, smoothstep(0.25, 0.85, N.z));
-  iri = mix(vec3(1.0), iri, mix(0.55, 1.0, brightness));
-
   // ---- key light (follows the light position control) ----
   vec3 L = normalize(vec3((uLight.x - 0.5) * 2.2, (uLight.y - 0.5) * 2.2, 1.4));
   float dif = clamp(dot(N, L), 0.0, 1.0);
   float specKey = pow(clamp(dot(R, L), 0.0, 1.0), 60.0);
 
   vec3 diffuse = base.rgb * (1.0 - uMetal * 0.55) * (0.5 + 0.6 * dif);
-  vec3 spec = env * fres * iri * (1.0 - rough * 0.6) * 1.8;
-  spec += iri * specKey * 0.6;
-  spec *= mix(0.3, 1.0, brightness); // dark ink keeps sheen but stays dark
+
+  // two-layer laminate (konvert-style): the metallic base reflects in
+  // the ink's own color, while the thin-film flare lives in the clear
+  // laminate above the print, so rainbows stay vivid over dark ink
+  float inkA = clamp(1.0 - brightness / 0.62, 0.0, 1.0);
+  vec3 specTint = mix(vec3(1.0), base.rgb * 1.25 + 0.08, 0.8 * inkA * uHolo);
+  // slight foil dim so the flares read brighter than the base
+  diffuse *= 1.0 - 0.18 * uHolo * (1.0 - inkA);
+  vec3 rawSpec = env * (1.0 - rough * 0.6) * 1.35 + vec3(specKey * 0.6);
+
+  float pool = poolField(vUv);
+  float band = smoothstep(0.35, 0.7, pool);
+  float flatness = smoothstep(0.25, 0.85, N.z);
+  vec3 film = rainbowFilm(cosT, vUv, R, flatness);
+
+  // per-cell glitter twinkle: micro-facets light up as the angle sweeps
+  float twk = 1.0 + pow(0.5 + 0.5 * sin(hash(floor(vUv * 950.0)) * 6.28318 +
+                                        cosT * 48.0),
+                        20.0) *
+                    (uGrain * 1.2);
+
+  vec3 specCol = rawSpec * specTint * fres;
+  specCol *= mix(1.0, 0.5, uHolo * band);
+  // calm foil still whispers the film: soft pearly sheen everywhere
+  specCol += rawSpec * mix(vec3(1.0), film, 0.75) * (0.3 * uHolo);
+  specCol *= mix(0.3, 1.0, brightness);
+  // metal-backed flare bypasses the dielectric fresnel: vivid head-on,
+  // and it lives above the ink so it only softens slightly over darks
+  vec3 flare = rawSpec * film * (2.3 * uHolo * band) *
+               mix(0.55, 1.0, brightness);
+
+  vec3 spec = (specCol + flare) * twk;
   // ink > 100%: dark ink covers the holo, reading as solid print
   float inkCover = max(uInk - 1.0, 0.0) * (1.0 - brightness);
   spec *= 1.0 - inkCover * 0.85;
