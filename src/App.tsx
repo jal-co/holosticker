@@ -120,6 +120,7 @@ export default function App() {
     async (opts: {
       anim: "sweep" | "peel"
       background: "transparent" | "white" | "black"
+      speed: number
     }) => {
       const renderer = rendererRef.current
       if (!renderer) return
@@ -130,6 +131,7 @@ export default function App() {
           imgAspect,
           anim: opts.anim,
           background: opts.background,
+          speed: opts.speed,
           onProgress: (done, total) =>
             setGifProgress(Math.round((done / total) * 100)),
         })

@@ -669,13 +669,16 @@ export class HoloRenderer {
     imgAspect: number
     anim?: GifAnim
     background?: "transparent" | "white" | "black"
+    /** Loop speed multiplier, 0.5–2; higher is faster */
+    speed?: number
     onProgress?: (done: number, total: number) => void
   }): Promise<Blob> {
     const { GIFEncoder, quantize, applyPalette } = await import("gifenc")
     const anim = input.anim ?? "sweep"
     const bg = input.background ?? input.settings.background
+    const speed = Math.min(2, Math.max(0.5, input.speed ?? 1))
     const size = Math.min(input.settings.exportSize, 800)
-    const frames = anim === "peel" ? 48 : 40
+    const frames = Math.max(12, Math.round((anim === "peel" ? 48 : 40) / speed))
     const delay = 60 // ms per frame
 
     const prevW = this.canvas.width

@@ -3,6 +3,7 @@ import { Dialog } from "radix-ui"
 import { Clapperboard, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
+import { Slider } from "@/components/ui/slider"
 import {
   Select,
   SelectContent,
@@ -30,7 +31,11 @@ interface Props {
   imgAspect: number
   settings: StickerSettings
   progress: number | null
-  onExport: (opts: { anim: GifAnim; background: GifBackground }) => void
+  onExport: (opts: {
+    anim: GifAnim
+    background: GifBackground
+    speed: number
+  }) => void
 }
 
 export function GifExportDialog({
@@ -47,12 +52,13 @@ export function GifExportDialog({
   const lastImageRef = useRef<ImageBitmap | null | undefined>(undefined)
   const [anim, setAnim] = useState<GifAnim>("sweep")
   const [background, setBackground] = useState<GifBackground>("transparent")
+  const [speed, setSpeed] = useState(1)
 
   // live looping preview of the chosen animation
   useEffect(() => {
     if (!open) return
     let raf = 0
-    const loopMs = anim === "peel" ? 2880 : 2400
+    const loopMs = (anim === "peel" ? 2880 : 2400) / speed
     const draw = () => {
       raf = requestAnimationFrame(draw)
       const canvas = canvasRef.current
@@ -88,7 +94,7 @@ export function GifExportDialog({
     }
     draw()
     return () => cancelAnimationFrame(raf)
-  }, [open, anim, image, imgAspect, settings])
+  }, [open, anim, speed, image, imgAspect, settings])
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -151,10 +157,26 @@ export function GifExportDialog({
             </div>
           </div>
 
+          <div className="mt-3 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Speed</Label>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {speed.toFixed(2)}×
+              </span>
+            </div>
+            <Slider
+              value={[speed]}
+              min={0.5}
+              max={2}
+              step={0.05}
+              onValueChange={([v]) => setSpeed(v)}
+            />
+          </div>
+
           <Button
             className="mt-3 w-full"
             disabled={progress !== null}
-            onClick={() => onExport({ anim, background })}
+            onClick={() => onExport({ anim, background, speed })}
           >
             <Clapperboard aria-hidden />
             {progress !== null ? `Encoding… ${progress}%` : "Export GIF"}
