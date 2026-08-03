@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react"
-import { HoloRenderer } from "@/lib/renderer"
+import { HoloRenderer } from "@/lib/three-renderer"
 import type { StickerSettings } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 

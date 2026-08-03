@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react"
 import { Sidebar } from "@/components/Sidebar"
 import { StickerCanvas } from "@/components/StickerCanvas"
 import { loadImageFile } from "@/lib/load-image"
-import type { HoloRenderer } from "@/lib/renderer"
+import type { HoloRenderer } from "@/lib/three-renderer"
 import { defaultSettings, type StickerSettings } from "@/lib/settings"
 
 export default function App() {
