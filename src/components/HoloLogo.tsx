@@ -14,10 +14,16 @@ const logoSettings: StickerSettings = {
 }
 
 /** Live holofoil render of the wordmark, tilting toward the pointer. */
-export function HoloLogo() {
+export function HoloLogo({ follow = true }: { follow?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<HoloRenderer | null>(null)
   const aspectRef = useRef(1)
+  const followRef = useRef(follow)
+
+  useEffect(() => {
+    followRef.current = follow
+    if (!follow) rendererRef.current?.setTilt(0, 0)
+  }, [follow])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -49,6 +55,7 @@ export function HoloLogo() {
 
     // follow the cursor anywhere on the page
     const onMove = (e: PointerEvent) => {
+      if (!followRef.current) return
       const rect = canvas.getBoundingClientRect()
       const cx = rect.left + rect.width / 2
       const cy = rect.top + rect.height / 2

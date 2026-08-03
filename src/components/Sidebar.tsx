@@ -1,5 +1,7 @@
-import { useRef } from "react"
+import { useRef, useState } from "react"
+import { Download, ImagePlus, RotateCcw, Settings2 } from "lucide-react"
 import { HoloLogo } from "@/components/HoloLogo"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -66,16 +68,61 @@ function SliderRow({
   )
 }
 
-const peelDirections: { value: PeelDirection; label: string }[] = [
-  { value: "top-left", label: "Top left" },
-  { value: "top", label: "Top" },
-  { value: "top-right", label: "Top right" },
-  { value: "right", label: "Right" },
-  { value: "bottom-right", label: "Bottom right" },
-  { value: "bottom", label: "Bottom" },
-  { value: "bottom-left", label: "Bottom left" },
-  { value: "left", label: "Left" },
+// 3×3 spatial pad, row-major; null is the inert center
+const directionPad: ({ value: PeelDirection; arrow: string } | null)[] = [
+  { value: "top-left", arrow: "↖" },
+  { value: "top", arrow: "↑" },
+  { value: "top-right", arrow: "↗" },
+  { value: "left", arrow: "←" },
+  null,
+  { value: "right", arrow: "→" },
+  { value: "bottom-left", arrow: "↙" },
+  { value: "bottom", arrow: "↓" },
+  { value: "bottom-right", arrow: "↘" },
 ]
+
+function Dropzone({
+  imageName,
+  onUpload,
+  onOpen,
+}: {
+  imageName: string | null
+  onUpload: (file: File) => void
+  onOpen: () => void
+}) {
+  const [over, setOver] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      onDragOver={(e) => {
+        e.preventDefault()
+        setOver(true)
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setOver(false)
+        const f = e.dataTransfer.files?.[0]
+        if (f) onUpload(f)
+      }}
+      className={cn(
+        "flex w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed px-3 py-5 text-center transition-[color,background-color,border-color]",
+        over
+          ? "border-ring bg-accent text-foreground"
+          : "border-input text-muted-foreground hover:border-ring/60 hover:bg-accent/50 hover:text-foreground",
+      )}
+    >
+      <ImagePlus className="size-5" strokeWidth={1.5} aria-hidden />
+      <span className="text-xs font-medium text-foreground">
+        {imageName ? "Replace artwork" : "Upload artwork"}
+      </span>
+      <span className="text-[11px]">
+        Drop or click · SVG, PNG, JPG, WebP
+      </span>
+    </button>
+  )
+}
 
 export function Sidebar({
   settings,
@@ -92,7 +139,7 @@ export function Sidebar({
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-sidebar">
       <div className="px-4 py-3">
-        <HoloLogo />
+        <HoloLogo follow={!imageName} />
       </div>
       <Separator />
       <ScrollArea className="min-h-0 flex-1">
@@ -113,17 +160,23 @@ export function Sidebar({
                 e.target.value = ""
               }}
             />
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => fileRef.current?.click()}
-            >
-              {imageName ? "Replace artwork" : "Upload SVG / PNG"}
-            </Button>
+            <Dropzone
+              imageName={imageName}
+              onUpload={onUpload}
+              onOpen={() => fileRef.current?.click()}
+            />
             {imageName && (
-              <p className="truncate text-xs text-muted-foreground">
-                {imageName}
-              </p>
+              <div className="flex items-center gap-2 rounded-lg bg-accent/60 px-2.5 py-1.5">
+                <span
+                  className="min-w-0 flex-1 truncate text-xs text-foreground"
+                  title={imageName}
+                >
+                  {imageName}
+                </span>
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  loaded
+                </span>
+              </div>
             )}
             <SliderRow
               label="Sticker size"
@@ -263,23 +316,40 @@ export function Sidebar({
             </h2>
             <div className="space-y-2">
               <Label className="text-xs">Direction</Label>
-              <Select
-                value={settings.peelDirection}
-                onValueChange={(v) =>
-                  onChange({ peelDirection: v as PeelDirection })
-                }
+              <div
+                role="radiogroup"
+                aria-label="Peel direction"
+                className="grid w-fit grid-cols-3 gap-1"
               >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {peelDirections.map((d) => (
-                    <SelectItem key={d.value} value={d.value}>
-                      {d.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {directionPad.map((d, i) =>
+                  d ? (
+                    <button
+                      key={d.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={settings.peelDirection === d.value}
+                      aria-label={d.value.replace("-", " ")}
+                      onClick={() => onChange({ peelDirection: d.value })}
+                      className={cn(
+                        "flex size-9 items-center justify-center rounded-lg border text-sm transition-[color,background-color,border-color]",
+                        settings.peelDirection === d.value
+                          ? "border-transparent bg-primary text-primary-foreground"
+                          : "border-input text-muted-foreground hover:bg-accent hover:text-foreground",
+                      )}
+                    >
+                      {d.arrow}
+                    </button>
+                  ) : (
+                    <span
+                      key={`c${i}`}
+                      className="flex size-9 items-center justify-center text-muted-foreground/40"
+                      aria-hidden
+                    >
+                      ·
+                    </span>
+                  ),
+                )}
+              </div>
             </div>
             <SliderRow
               label="Peel amount"
@@ -357,18 +427,29 @@ export function Sidebar({
               disabled={!imageName || exporting}
               onClick={onExport}
             >
+              <Download aria-hidden />
               {exporting ? "Exporting…" : "Export PNG"}
             </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={onExportSettings}
-            >
-              Export settings
-            </Button>
-            <Button variant="ghost" className="w-full" onClick={onReset}>
-              Reset settings
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={onExportSettings}
+              >
+                <Settings2 aria-hidden />
+                Settings
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex-1 text-muted-foreground"
+                onClick={onReset}
+              >
+                <RotateCcw aria-hidden />
+                Reset
+              </Button>
+            </div>
           </section>
         </div>
       </ScrollArea>
