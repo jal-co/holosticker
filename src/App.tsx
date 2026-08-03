@@ -168,7 +168,7 @@ export default function App() {
           target="_blank"
           rel="noreferrer"
           aria-label="Follow jalcowastaken on X"
-          className="group absolute bottom-16 right-[4.5rem] flex flex-col items-end select-none text-violet-500 transition-colors hover:text-fuchsia-500"
+          className="group absolute bottom-16 right-[5.5rem] flex flex-col items-end select-none text-violet-500 transition-colors hover:text-fuchsia-500"
         >
           <span
             className="block -rotate-6 pr-8 text-lg transition-transform group-hover:-rotate-3 group-hover:scale-105"
