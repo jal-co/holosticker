@@ -154,16 +154,17 @@ export default function App() {
       a.click()
       URL.revokeObjectURL(url)
     }
-    // the artwork as its own file, referenced by path from the component
+    const source = buildReactComponent(settings, imageName ?? "sticker")
+    download(new Blob([source], { type: "text/plain" }), "holo-sticker.tsx")
+    // the artwork as its own file, referenced by path from the component;
+    // staggered so the browser doesn't drop one of the two downloads
     const c = document.createElement("canvas")
     c.width = image.width
     c.height = image.height
     c.getContext("2d")!.drawImage(image, 0, 0)
     c.toBlob((b) => {
-      if (b) download(b, "holo-sticker-art.png")
+      if (b) setTimeout(() => download(b, "holo-sticker-art.png"), 400)
     }, "image/png")
-    const source = buildReactComponent(settings, imageName ?? "sticker")
-    download(new Blob([source], { type: "text/plain" }), "holo-sticker.tsx")
     setComponentDialogOpen(true)
   }, [image, settings, imageName])
 
