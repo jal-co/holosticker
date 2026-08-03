@@ -434,8 +434,8 @@ export class HoloRenderer {
 
     const ext = 0.5 * Math.hypot(sx, sy)
     const foldC = ext - s.peelAmount * 2 * ext
-    const r = Math.max(s.curl, 0.02) * 1.4
-    // conical roll: tighter near the peel corner, opening outward
+    const r = Math.max(s.curl, 0.02) * 2.2
+    // conical bend: tighter near the peel corner, opening outward
     const perp = new THREE.Vector2(-d.y, d.x)
     const corner = new THREE.Vector2(
       Math.sign(-d.x) * sx * 0.5,
@@ -443,6 +443,8 @@ export class HoloRenderer {
     )
     const qc = corner.x * perp.x + corner.y * perp.y
     const cone = 2 * Math.abs(d.x * d.y) // 1 on diagonals, 0 on edges
+    // total fold-back angle: deepens slightly as the peel progresses
+    const maxTheta = Math.PI * (0.55 + 0.28 * s.peelAmount)
 
     for (let i = 0; i < pos.count; i++) {
       const ux = ((i % (SEGS + 1)) / SEGS - 0.5) * sx
@@ -454,16 +456,12 @@ export class HoloRenderer {
       const u = c - foldC
       if (s.peelAmount > 0.001 && u > 0) {
         const lq = Math.abs(ux * perp.x + uy * perp.y - qc) / ext
-        const rEff = r * Math.max(0.4, 1 + cone * (lq - 0.55) * 1.3)
-        const theta = u / rEff
-        let newC: number
-        if (theta < Math.PI) {
-          newC = foldC + rEff * Math.sin(theta)
-          z = rEff * (1 - Math.cos(theta))
-        } else {
-          newC = foldC - (u - Math.PI * rEff)
-          z = 2 * rEff
-        }
+        const rEff = r * Math.max(0.45, 1 + cone * (lq - 0.55) * 1.2)
+        // graded hinge rotation: the bend saturates, so curvature
+        // concentrates at the fold and the flap tail stays flat
+        const theta = maxTheta * (1 - Math.exp(-u / rEff))
+        const newC = foldC + u * Math.cos(theta)
+        z = u * Math.sin(theta)
         const shift = newC - c
         x -= d.x * shift
         y -= d.y * shift
@@ -476,7 +474,7 @@ export class HoloRenderer {
     }
     pos.needsUpdate = true
     this.geometry.computeVertexNormals()
-    this.material.uniforms.uCurlH.value = 2 * r
+    this.material.uniforms.uCurlH.value = Math.max(0.15, ext * 0.7)
   }
 
   render(input: { settings: StickerSettings; imgAspect: number }) {
