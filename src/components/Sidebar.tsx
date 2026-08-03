@@ -412,6 +412,15 @@ export function Sidebar({
                 </SelectContent>
               </Select>
             </div>
+          </section>
+
+          <Separator />
+
+          {/* Settings */}
+          <section className="space-y-3">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Settings
+            </h2>
             <input
               ref={settingsFileRef}
               type="file"

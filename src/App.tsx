@@ -162,15 +162,16 @@ export default function App() {
           />
         </div>
         {/* handwritten "follow me on x" note + arrow pointing at the pill */}
+        {/* handwritten note; the arrow tip lands on the X icon in the pill */}
         <a
           href="https://x.com/jalcowastaken"
           target="_blank"
           rel="noreferrer"
           aria-label="Follow jalcowastaken on X"
-          className="group absolute right-24 bottom-10 select-none text-violet-500 transition-colors hover:text-fuchsia-500"
+          className="group absolute bottom-12 right-[4.5rem] flex flex-col items-end select-none text-violet-500 transition-colors hover:text-fuchsia-500"
         >
           <span
-            className="block -rotate-6 text-lg transition-transform group-hover:-rotate-3 group-hover:scale-105"
+            className="block -rotate-6 pr-8 text-lg transition-transform group-hover:-rotate-3 group-hover:scale-105"
             style={{
               fontFamily: '"Bradley Hand", "Segoe Script", "Comic Sans MS", cursive',
             }}
@@ -178,49 +179,18 @@ export default function App() {
             follow me on x
           </span>
           <svg
-            viewBox="0 0 90 46"
-            width="90"
-            height="46"
+            viewBox="0 0 48 40"
+            width="48"
+            height="40"
             fill="none"
             stroke="currentColor"
             strokeWidth="1.8"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="ml-16 mt-0.5 transition-transform group-hover:translate-x-1 group-hover:translate-y-0.5"
+            className="-mr-4 transition-transform group-hover:translate-y-0.5"
           >
-            <path d="M6 4c14 22 40 34 70 32" pathLength="1" />
-            <path d="M68 28l9 8-12 3" />
-          </svg>
-        </a>
-        {/* handwritten "star on github" note + arrow pointing at the pill */}
-        <a
-          href="https://github.com/jal-co/holosticker"
-          target="_blank"
-          rel="noreferrer"
-          aria-label="Star holosticker on GitHub"
-          className="group/star absolute right-32 bottom-3 flex items-end gap-1 select-none text-emerald-600 transition-colors hover:text-emerald-500"
-        >
-          <span
-            className="block -rotate-3 text-lg transition-transform group-hover/star:rotate-0 group-hover/star:scale-105"
-            style={{
-              fontFamily: '"Bradley Hand", "Segoe Script", "Comic Sans MS", cursive',
-            }}
-          >
-            star on github
-          </span>
-          <svg
-            viewBox="0 0 44 24"
-            width="44"
-            height="24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="mb-1 transition-transform group-hover/star:translate-x-1"
-          >
-            <path d="M3 18c12 4 26 2 36-8" />
-            <path d="M34 8l6-1-1 7" />
+            <path d="M6 4c18 4 32 14 36 30" />
+            <path d="M35 28l7 7 3-10" />
           </svg>
         </a>
         <div className="absolute right-4 bottom-4 flex items-center gap-0.5 rounded-full border bg-background/80 p-1 shadow-sm backdrop-blur">
