@@ -1,14 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import {
-  Box,
-  ChevronDown,
-  Clapperboard,
-  Download,
-  History,
-  Image,
-  Moon,
-  Sun,
-} from "lucide-react"
+import { ChevronDown, History, Moon, Sun } from "lucide-react"
 import { DropdownMenu } from "radix-ui"
 import { Analytics } from "@vercel/analytics/react"
 import { Button } from "@/components/ui/button"
@@ -20,11 +11,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ChangelogDialog } from "@/components/ChangelogDialog"
+import { ComponentExportDialog } from "@/components/ComponentExportDialog"
 import { GifExportDialog } from "@/components/GifExportDialog"
 import { currentVersion } from "@/lib/changelog"
 import { Sidebar } from "@/components/Sidebar"
 import { StickerCanvas } from "@/components/StickerCanvas"
 import { loadImageFile } from "@/lib/load-image"
+import { buildReactComponent } from "@/lib/react-export"
 import type { HoloRenderer } from "@/lib/three-renderer"
 import { defaultSettings, type StickerSettings } from "@/lib/settings"
 
@@ -37,6 +30,7 @@ export default function App() {
   const [gifProgress, setGifProgress] = useState<number | null>(null)
   const [gifDialogOpen, setGifDialogOpen] = useState(false)
   const [changelogOpen, setChangelogOpen] = useState(false)
+  const [componentDialogOpen, setComponentDialogOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [dark, setDark] = useState(
     () =>
@@ -149,6 +143,29 @@ export default function App() {
     },
     [settings, imgAspect, imageName],
   )
+
+  const handleExportComponent = useCallback(() => {
+    if (!image) return
+    const download = (blob: Blob, filename: string) => {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    }
+    // the artwork as its own file, referenced by path from the component
+    const c = document.createElement("canvas")
+    c.width = image.width
+    c.height = image.height
+    c.getContext("2d")!.drawImage(image, 0, 0)
+    c.toBlob((b) => {
+      if (b) download(b, "holo-sticker-art.png")
+    }, "image/png")
+    const source = buildReactComponent(settings, imageName ?? "sticker")
+    download(new Blob([source], { type: "text/plain" }), "holo-sticker.tsx")
+    setComponentDialogOpen(true)
+  }, [image, settings, imageName])
 
   const handleExportGLB = useCallback(async () => {
     const renderer = rendererRef.current
@@ -275,7 +292,15 @@ export default function App() {
             <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>
                 <Button disabled={!image || exporting}>
-                  <Download aria-hidden />
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    className="size-4"
+                    aria-hidden="true"
+                  >
+                    <path fillRule="evenodd" clipRule="evenodd" d="M3.75 14C4.16421 14 4.5 14.3358 4.5 14.75V18.25C4.5 18.9404 5.05964 19.5 5.75 19.5H18.25C18.9404 19.5 19.5 18.9404 19.5 18.25V14.75C19.5 14.3358 19.8358 14 20.25 14C20.6642 14 21 14.3358 21 14.75V18.25C21 19.7688 19.7688 21 18.25 21H5.75C4.23122 21 3 19.7688 3 18.25V14.75C3 14.3358 3.33579 14 3.75 14Z" />
+                    <path fillRule="evenodd" clipRule="evenodd" d="M12 15.75C12.1989 15.75 12.3897 15.671 12.5303 15.5303L16.0303 12.0303C16.3232 11.7374 16.3232 11.2626 16.0303 10.9697C15.7374 10.6768 15.2626 10.6768 14.9697 10.9697L12.75 13.1893V3.75C12.75 3.33579 12.4142 3 12 3C11.5858 3 11.25 3.33579 11.25 3.75V13.1893L9.03033 10.9697C8.73744 10.6768 8.26256 10.6768 7.96967 10.9697C7.67678 11.2626 7.67678 11.7374 7.96967 12.0303L11.4697 15.5303C11.6103 15.671 11.8011 15.75 12 15.75Z" />
+                  </svg>
                   {gifProgress !== null
                     ? `GIF ${gifProgress}%`
                     : exporting
@@ -294,7 +319,13 @@ export default function App() {
                     onSelect={() => void handleExport()}
                     className="flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
                   >
-                    <Image className="size-4 text-muted-foreground" aria-hidden />
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="size-4 text-muted-foreground" aria-hidden="true">
+                      <path fillRule="evenodd" clipRule="evenodd" d="M18.798 15.5765C18.614 15.5299 18.4251 15.5189 18.2978 15.5269C17.7041 15.564 16.9054 16.2667 16.9054 17.561C16.9054 18.8392 17.6295 19.4975 18.3957 19.5C18.8281 19.4938 19.2307 19.3873 19.5 19.2133V18.5834H19.1961C18.7819 18.5834 18.4461 18.2476 18.4461 17.8334C18.4461 17.4192 18.7819 17.0834 19.1961 17.0834H20.25C20.6642 17.0834 21 17.4192 21 17.8334V19.5538C21 19.7386 20.9318 19.9168 20.8085 20.0544C20.1617 20.7761 19.1466 20.9908 18.4095 20.9999L18.4001 21.0001C16.5623 21.0001 15.4054 19.4058 15.4054 17.561C15.4054 15.7297 16.5885 14.1308 18.2043 14.0298C18.4763 14.0128 18.8215 14.0351 19.1659 14.1223C19.5045 14.2079 19.9079 14.373 20.2262 14.691C20.5192 14.9837 20.5195 15.4586 20.2267 15.7516C19.934 16.0447 19.4591 16.0449 19.166 15.7522C19.1074 15.6935 18.9879 15.6245 18.798 15.5765Z" />
+                      <path fillRule="evenodd" clipRule="evenodd" d="M3 14.75C3 14.3358 3.33579 14 3.75 14H5.5C6.74264 14 7.75 15.0074 7.75 16.25C7.75 17.4926 6.74264 18.5 5.5 18.5H4.5V20.25C4.5 20.6642 4.16421 21 3.75 21C3.33579 21 3 20.6642 3 20.25V14.75ZM4.5 17H5.5C5.91421 17 6.25 16.6642 6.25 16.25C6.25 15.8358 5.91421 15.5 5.5 15.5H4.5V17Z" />
+                      <path fillRule="evenodd" clipRule="evenodd" d="M8.75 14.75C8.75 14.3358 9.08579 14 9.5 14H10C10.2652 14 10.5108 14.1401 10.6457 14.3685L13 18.3527V14.75C13 14.3358 13.3358 14 13.75 14C14.1642 14 14.5 14.3358 14.5 14.75V20.25C14.5 20.6642 14.1642 21 13.75 21H13.25C12.9848 21 12.7392 20.8599 12.6043 20.6315L10.25 16.6473V20.25C10.25 20.6642 9.91421 21 9.5 21C9.08579 21 8.75 20.6642 8.75 20.25V14.75Z" />
+                      <path d="M13 3H6.75C5.23122 3 4 4.23122 4 5.75V12H20V10H15.75C14.2312 10 13 8.76878 13 7.25V3Z" />
+                      <path d="M19.9803 8.5C19.9072 7.89165 19.6322 7.32159 19.1945 6.88388L16.1161 3.80546C15.6784 3.36775 15.1083 3.09283 14.5 3.01967V7.25C14.5 7.94036 15.0596 8.5 15.75 8.5H19.9803Z" />
+                    </svg>
                     PNG image
                     <span className="ml-auto text-xs text-muted-foreground">
                       {settings.exportSize}px
@@ -304,20 +335,43 @@ export default function App() {
                     onSelect={() => setGifDialogOpen(true)}
                     className="flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
                   >
-                    <Clapperboard
-                      className="size-4 text-muted-foreground"
-                      aria-hidden
-                    />
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="size-4 text-muted-foreground" aria-hidden="true">
+                      <path fillRule="evenodd" clipRule="evenodd" d="M2 6.75C2 5.23122 3.23122 4 4.75 4H19.25C20.7688 4 22 5.23122 22 6.75V17.25C22 18.7688 20.7688 20 19.25 20H4.75C3.23122 20 2 18.7688 2 17.25V6.75ZM5.75 12.3676C5.75 14.0113 6.70955 15 8.34036 15C9.79045 15 10.7672 14.138 10.7672 12.8662V12.5155C10.7672 11.9789 10.5176 11.738 9.94966 11.738H8.89544C8.51678 11.738 8.31454 11.9113 8.31454 12.2282C8.31454 12.5493 8.52108 12.7268 8.89544 12.7268H9.4247V12.9718C9.4247 13.5 9.01162 13.8549 8.3963 13.8549C7.60456 13.8549 7.16997 13.3268 7.16997 12.3634V11.6662C7.16997 10.6901 7.59596 10.1789 8.40921 10.1789C8.95193 10.1789 9.27253 10.4939 9.61231 10.8279L9.63554 10.8507C9.76033 10.9732 9.88941 11.0282 10.0572 11.0282C10.3972 11.0282 10.6338 10.8 10.6338 10.4662C10.6338 10.1324 10.3799 9.76901 9.99268 9.49437C9.56239 9.17746 8.97289 9 8.30594 9C6.72246 9 5.75 10.0014 5.75 11.5986V12.3676ZM12.3894 14.9155C12.8412 14.9155 13.0951 14.6451 13.0951 14.1634V9.81549C13.0951 9.33803 12.8369 9.06338 12.3808 9.06338C11.9247 9.06338 11.6708 9.3338 11.6708 9.81549V14.1634C11.6708 14.6408 11.9333 14.9155 12.3894 14.9155ZM15.6596 14.1634C15.6596 14.6451 15.4101 14.9155 14.9626 14.9155C14.5022 14.9155 14.2354 14.6366 14.2354 14.1634V9.90423C14.2354 9.38873 14.5237 9.10563 15.0572 9.10563H17.6863C18.0133 9.10563 18.25 9.34225 18.25 9.67183C18.25 9.99718 18.0133 10.2254 17.6863 10.2254H15.6596V11.6113H17.4669C17.8068 11.6113 18.0306 11.831 18.0306 12.1563C18.0306 12.4817 17.8025 12.7014 17.4669 12.7014H15.6596V14.1634Z" />
+                    </svg>
                     GIF animation
                     <span className="ml-auto text-xs text-muted-foreground">
                       loop
                     </span>
                   </DropdownMenu.Item>
                   <DropdownMenu.Item
+                    onSelect={handleExportComponent}
+                    className="flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      className="size-4 text-muted-foreground"
+                      aria-hidden="true"
+                    >
+                      <path d="M13.2373 2.17663C12.5539 1.49321 11.4458 1.49321 10.7624 2.17663L8.42663 4.51241C7.74321 5.19583 7.74321 6.30387 8.42663 6.98729L10.7624 9.32307C11.4458 10.0065 12.5539 10.0065 13.2373 9.32307L15.5731 6.98729C16.2565 6.30387 16.2565 5.19583 15.5731 4.51241L13.2373 2.17663Z" />
+                      <path d="M6.98729 8.42663C6.30387 7.74321 5.19583 7.74321 4.51241 8.42663L2.17663 10.7624C1.49321 11.4458 1.49321 12.5539 2.17663 13.2373L4.51241 15.5731C5.19583 16.2565 6.30387 16.2565 6.98729 15.5731L9.32307 13.2373C10.0065 12.5539 10.0065 11.4458 9.32307 10.7624L6.98729 8.42663Z" />
+                      <path d="M19.4873 8.42663C18.8039 7.74321 17.6958 7.74321 17.0124 8.42663L14.6766 10.7624C13.9932 11.4458 13.9932 12.5539 14.6766 13.2373L17.0124 15.5731C17.6958 16.2565 18.8039 16.2565 19.4873 15.5731L21.8231 13.2373C22.5065 12.5539 22.5065 11.4458 21.8231 10.7624L19.4873 8.42663Z" />
+                      <path d="M13.2373 14.6766C12.5539 13.9932 11.4458 13.9932 10.7624 14.6766L8.42663 17.0124C7.74321 17.6958 7.74321 18.8039 8.42663 19.4873L10.7624 21.8231C11.4458 22.5065 12.5539 22.5065 13.2373 21.8231L15.5731 19.4873C16.2565 18.8039 16.2565 17.6958 15.5731 17.0124L13.2373 14.6766Z" />
+                    </svg>
+                    Component
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      .tsx
+                    </span>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
                     onSelect={() => void handleExportGLB()}
                     className="flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 text-sm outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
                   >
-                    <Box className="size-4 text-muted-foreground" aria-hidden />
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="size-4 text-muted-foreground" aria-hidden="true">
+                      <path d="M11 12.2883C11.1547 12.3776 11.25 12.5427 11.25 12.7213V21.8166C11.25 22.2015 10.8333 22.4421 10.5 22.2496L3.74807 18.3515C2.89721 17.8603 2.37305 16.9524 2.37305 15.9699V8.17366C2.37305 7.78876 2.78971 7.54819 3.12304 7.74064L11 12.2883Z" />
+                      <path d="M21.627 15.9699C21.627 16.9524 21.1028 17.8603 20.2519 18.3515L13.5 22.2496C13.1667 22.4421 12.75 22.2015 12.75 21.8166V12.7213C12.75 12.5427 12.8453 12.3776 13 12.2883L20.877 7.74064C21.2103 7.5482 21.627 7.78876 21.627 8.17366V15.9699Z" />
+                      <path d="M20.1261 5.57581C20.4594 5.76826 20.4594 6.24936 20.1261 6.44181L12.25 10.9895C12.0953 11.0788 11.9047 11.0788 11.75 10.9895L3.87307 6.44183C3.53973 6.24938 3.53973 5.76825 3.87307 5.5758L10.6249 1.67768C11.4758 1.18644 12.5242 1.18646 13.375 1.67775L20.1261 5.57581Z" />
+                    </svg>
                     GLB 3D model
                   </DropdownMenu.Item>
                 </DropdownMenu.Content>
@@ -414,6 +468,10 @@ export default function App() {
         </div>
       </main>
       <ChangelogDialog open={changelogOpen} onOpenChange={setChangelogOpen} />
+      <ComponentExportDialog
+        open={componentDialogOpen}
+        onOpenChange={setComponentDialogOpen}
+      />
       <GifExportDialog
         open={gifDialogOpen}
         onOpenChange={(o) => {
