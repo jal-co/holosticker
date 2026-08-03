@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Download, Moon, Sun } from "lucide-react"
+import { Box, Download, Moon, Sun } from "lucide-react"
 import { Analytics } from "@vercel/analytics/react"
 import { Button } from "@/components/ui/button"
 import {
@@ -100,6 +100,23 @@ export default function App() {
     URL.revokeObjectURL(url)
   }, [settings])
 
+  const handleExportGLB = useCallback(async () => {
+    const renderer = rendererRef.current
+    if (!renderer) return
+    setExporting(true)
+    try {
+      const blob = await renderer.exportGLB({ settings, imgAspect })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `${(imageName ?? "sticker").replace(/\.[^.]+$/, "")}-holo.glb`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+    }
+  }, [settings, imgAspect, imageName])
+
   const handleImportSettings = useCallback(async (file: File) => {
     try {
       const parsed = JSON.parse(await file.text()) as Partial<StickerSettings>
@@ -173,6 +190,15 @@ export default function App() {
               <SelectItem value="4096">4096 × 4096</SelectItem>
             </SelectContent>
           </Select>
+            <Button
+              variant="outline"
+              disabled={!image || exporting}
+              onClick={handleExportGLB}
+              title="Export as a 3D model (glTF binary)"
+            >
+              <Box aria-hidden />
+              GLB
+            </Button>
             <Button disabled={!image || exporting} onClick={handleExport}>
               <Download aria-hidden />
               {exporting ? "Exporting…" : "Export PNG"}

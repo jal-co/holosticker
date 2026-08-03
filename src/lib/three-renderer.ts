@@ -625,4 +625,34 @@ export class HoloRenderer {
     this.render(input)
     return blob
   }
+
+  /** Export the current sticker (peel geometry + die-cut art) as a GLB. */
+  async exportGLB(input: {
+    settings: StickerSettings
+    imgAspect: number
+  }): Promise<Blob> {
+    this.render(input) // make sure geometry and maps match the settings
+    const { GLTFExporter } = await import(
+      "three/examples/jsm/exporters/GLTFExporter.js"
+    )
+    const geo = this.geometry.clone()
+    const mat = new THREE.MeshPhysicalMaterial({
+      map: this.material.uniforms.uMap.value as THREE.Texture | null,
+      transparent: true,
+      alphaTest: 0.05,
+      side: THREE.DoubleSide,
+      metalness: 0.85,
+      roughness: 0.25,
+      iridescence: 1,
+      iridescenceIOR: 1.7,
+      iridescenceThicknessRange: [120, 680],
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.scale.copy(this.mesh.scale)
+    const exporter = new GLTFExporter()
+    const result = await exporter.parseAsync(mesh, { binary: true })
+    geo.dispose()
+    mat.dispose()
+    return new Blob([result as ArrayBuffer], { type: "model/gltf-binary" })
+  }
 }
