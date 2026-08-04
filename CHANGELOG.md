@@ -1,5 +1,11 @@
 # holosticker
 
+## 1.6.1
+
+### Patch Changes
+
+- 5fc9fdc: Animation exports auto-download again after encoding, with the in-dialog Save button as fallback
+
 ## 1.6.0
 
 ### Minor Changes
