@@ -183,6 +183,12 @@ export default function App() {
             if (prev) URL.revokeObjectURL(prev.url)
             return result
           })
+          // attempt the download; if the browser drops it because the
+          // click's activation expired, the Save button is right there
+          const a = document.createElement("a")
+          a.href = result.url
+          a.download = result.filename
+          a.click()
         }
       } finally {
         setExporting(false)
